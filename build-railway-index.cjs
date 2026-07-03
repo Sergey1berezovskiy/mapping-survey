@@ -229,6 +229,56 @@ html = html
   .replace(
     'grid-template-columns: 1fr 1fr;',
     'grid-template-columns: 1fr;'
+  )
+  .replace(
+    "      const managerItem = findReferenceByLabel('managers', manager) || {\n        id: manager,\n        label: manager,\n        extra: '',\n      };",
+    `      const managerItem = findReferenceByLabel('managers', manager) || findReferenceByTokens('managers', manager) || {
+        id: manager,
+        label: manager,
+        extra: '',
+        fromEmployeeReference: true,
+      };`
+  )
+  .replace(
+    "        extra: managerItem.extra || '',\n      };",
+    `        extra: managerItem.extra || '',
+        fromEmployeeReference: Boolean(managerItem.fromEmployeeReference),
+      };`
+  )
+  .replace(
+    "      selectedRef.textContent = managerItem.extra || '';\n      selectedRef.classList.toggle('show', Boolean(managerItem.extra));",
+    `      selectedRef.textContent = '';
+      selectedRef.classList.remove('show');`
+  )
+  .replace(
+    "    function showSection(index, shouldSave = true) {",
+    `    function findReferenceByTokens(type, label) {
+      const tokens = normalizeSearchText(label).split(' ').filter((token) => token.length >= 2);
+      if (!tokens.length) return null;
+
+      const items = state.references && Array.isArray(state.references[type])
+        ? state.references[type]
+        : [];
+
+      return items.find((item) => {
+        const haystack = item.normalizedSearch || normalizeSearchText([item.label, item.search, item.extra].filter(Boolean).join(' '));
+        return tokens.every((token) => haystack.includes(token));
+      }) || null;
+    }
+
+    function showSection(index, shouldSave = true) {`
+  )
+  .replace(
+    "          if (field.dataset.reference === 'stores') {\n            updateStoreDetails(field, selected || {});\n            return;\n          }",
+    `          if (field.dataset.reference === 'employees') {
+            selectedRef.textContent = '';
+            selectedRef.classList.remove('show');
+            return;
+          }
+          if (field.dataset.reference === 'stores') {
+            updateStoreDetails(field, selected || {});
+            return;
+          }`
   );
 
 if (html.includes('google.script.run')) {
