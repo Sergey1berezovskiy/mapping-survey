@@ -11,6 +11,7 @@ const port = process.env.PORT || 3000;
 const scriptUrl = process.env.APPS_SCRIPT_URL;
 const jsonLimitBytes = Number(process.env.JSON_LIMIT_BYTES || 50 * 1024 * 1024);
 const upstreamTimeoutMs = Number(process.env.UPSTREAM_TIMEOUT_MS || 25000);
+const serviceVersion = 'railway-survey-2026-07-03-1735';
 
 const mimeByExt = {
   '.html': 'text/html; charset=utf-8',
@@ -29,7 +30,16 @@ const server = http.createServer(async (req, res) => {
     const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
 
     if (req.method === 'GET' && url.pathname === '/health') {
-      sendJson(res, 200, { ok: true });
+      sendJson(res, 200, { ok: true, version: serviceVersion });
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/debug/version') {
+      sendJson(res, 200, {
+        ok: true,
+        version: serviceVersion,
+        scriptUrlConfigured: Boolean(scriptUrl),
+      });
       return;
     }
 
@@ -209,5 +219,5 @@ function sendText(res, status, text) {
 }
 
 server.listen(port, () => {
-  console.log(`Mapping Survey is running on port ${port}`);
+  console.log(`Mapping Survey ${serviceVersion} is running on port ${port}`);
 });
