@@ -22,7 +22,7 @@ html = html.replace(
       return payload.result;
     }
 
-    async function boot()`
+    function boot()`
 );
 
 html = html.replace(
