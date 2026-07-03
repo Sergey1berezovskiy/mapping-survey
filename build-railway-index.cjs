@@ -10,11 +10,26 @@ html = html.replace(
   `    };
 
     async function apiCall(action, params = {}) {
-      const response = await fetch('/api/' + encodeURIComponent(action), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(params),
-      });
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 25000);
+
+      let response;
+      try {
+        response = await fetch('/api/' + encodeURIComponent(action), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(params),
+          signal: controller.signal,
+        });
+      } catch (error) {
+        if (error && error.name === 'AbortError') {
+          throw new Error('Сервер не ответил за 25 секунд. Проверьте Railway Variables и Apps Script deployment.');
+        }
+        throw error;
+      } finally {
+        clearTimeout(timeout);
+      }
+
       const payload = await response.json().catch(() => null);
       if (!response.ok || !payload || payload.ok === false) {
         throw new Error(payload && payload.error ? payload.error : 'Ошибка запроса к серверу');

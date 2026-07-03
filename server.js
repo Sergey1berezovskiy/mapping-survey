@@ -10,6 +10,7 @@ const publicDir = path.join(__dirname, 'public');
 const port = process.env.PORT || 3000;
 const scriptUrl = process.env.APPS_SCRIPT_URL;
 const jsonLimitBytes = Number(process.env.JSON_LIMIT_BYTES || 50 * 1024 * 1024);
+const upstreamTimeoutMs = Number(process.env.UPSTREAM_TIMEOUT_MS || 25000);
 
 const mimeByExt = {
   '.html': 'text/html; charset=utf-8',
@@ -29,6 +30,11 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === 'GET' && url.pathname === '/health') {
       sendJson(res, 200, { ok: true });
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/debug/apps-script') {
+      await handleAppsScriptDebug(res);
       return;
     }
 
@@ -61,30 +67,73 @@ async function handleApi(req, res, action) {
   }
 
   const params = await readJsonBody(req);
-  const upstream = await fetch(scriptUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify({ action, params }),
-    redirect: 'follow',
-  });
+  const payload = await callAppsScript(action, params);
+  sendJson(res, 200, { ok: true, result: payload.result });
+}
 
-  const text = await upstream.text();
-  let payload;
-  try {
-    payload = JSON.parse(text);
-  } catch {
-    throw new Error(`Apps Script returned non-JSON response: ${text.slice(0, 300)}`);
-  }
-
-  if (!upstream.ok || payload.ok === false) {
-    sendJson(res, upstream.ok ? 400 : upstream.status, {
+async function handleAppsScriptDebug(res) {
+  if (!scriptUrl) {
+    sendJson(res, 500, {
       ok: false,
-      error: payload.error || upstream.statusText,
+      scriptUrlConfigured: false,
+      error: 'APPS_SCRIPT_URL is not configured on Railway.',
     });
     return;
   }
 
-  sendJson(res, 200, { ok: true, result: payload.result });
+  try {
+    const payload = await callAppsScript('testDeploymentReady', {});
+    sendJson(res, 200, {
+      ok: true,
+      scriptUrlConfigured: true,
+      result: payload.result,
+    });
+  } catch (error) {
+    sendJson(res, 500, {
+      ok: false,
+      scriptUrlConfigured: true,
+      error: error && error.message ? error.message : String(error),
+    });
+  }
+}
+
+async function callAppsScript(action, params) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), upstreamTimeoutMs);
+
+  try {
+    const upstream = await fetch(scriptUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action, params }),
+      redirect: 'follow',
+      signal: controller.signal,
+    });
+
+    const text = await upstream.text();
+    let payload;
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      const sample = text.replace(/\s+/g, ' ').slice(0, 300);
+      throw new Error(
+        `Apps Script returned non-JSON response. Check deployment access and APPS_SCRIPT_URL. Response: ${sample}`
+      );
+    }
+
+    if (!upstream.ok || payload.ok === false) {
+      throw new Error(payload.error || upstream.statusText);
+    }
+
+    return payload;
+  } catch (error) {
+    if (error && error.name === 'AbortError') {
+      throw new Error(`Apps Script did not respond within ${Math.round(upstreamTimeoutMs / 1000)} seconds.`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function readJsonBody(req) {
