@@ -31,7 +31,8 @@ html = html.replace(
 
     async function apiCall(action, params = {}) {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 25000);
+      const timeoutMs = action === 'submitSurvey' || action === 'uploadQuestionFiles' ? 120000 : 25000;
+      const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
       let response;
       try {
@@ -43,7 +44,7 @@ html = html.replace(
         });
       } catch (error) {
         if (error && error.name === 'AbortError') {
-          throw new Error('Сервер не ответил за 25 секунд. Проверьте Railway Variables и Apps Script deployment.');
+          throw new Error('Сервер не ответил за ' + Math.round(timeoutMs / 1000) + ' секунд. Проверьте Railway Variables и Apps Script deployment.');
         }
         throw error;
       } finally {
@@ -194,6 +195,41 @@ html = replaceUntilAfter(
         showError(error);
       }`
 );
+
+html = html
+  .replace(
+    'const description = getSectionDescription(section);',
+    'const title = getSectionTitle(section);\n        const description = getSectionDescription(section);'
+  )
+  .replace(
+    '<h2>${escapeHtml(section.title)}</h2>',
+    '<h2>${escapeHtml(title)}</h2>'
+  )
+  .replace(
+    "    function getSectionDescription(section) {\n      if (section.code === 'general') return '';",
+    `    function getSectionTitle(section) {
+      if (section.title === 'Промоутеры и BA') return 'Промоутеры и BA конкурентов';
+      if (section.title === 'Фото и проблемные ТТ') return 'Фото BZ';
+      return section.title;
+    }
+
+    function getSectionDescription(section) {
+      if (section.code === 'general') return '';
+      if (section.title === 'Фото и проблемные ТТ') return '';`
+  )
+  .replace(
+    /<div class="file-actions">\s*<label class="file-action primary-file">[\s\S]*?<input data-file-input="\$\{escapeHtml\(question\.code\)\}" type="file" accept="image\/\*" multiple>\s*<\/label>\s*<\/div>/,
+    `<div class="file-actions">
+                <label class="file-action primary-file">
+                  Сделать/Загрузить Фото
+                  <input data-file-input="\${escapeHtml(question.code)}" type="file" accept="image/*" multiple>
+                </label>
+              </div>`
+  )
+  .replace(
+    'grid-template-columns: 1fr 1fr;',
+    'grid-template-columns: 1fr;'
+  );
 
 if (html.includes('google.script.run')) {
   throw new Error('google.script.run still present in Railway HTML.');

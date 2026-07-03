@@ -9,9 +9,9 @@ const publicDir = path.join(__dirname, 'public');
 
 const port = process.env.PORT || 3000;
 const scriptUrl = process.env.APPS_SCRIPT_URL;
-const jsonLimitBytes = Number(process.env.JSON_LIMIT_BYTES || 50 * 1024 * 1024);
-const upstreamTimeoutMs = Number(process.env.UPSTREAM_TIMEOUT_MS || 25000);
-const serviceVersion = 'railway-survey-2026-07-03-1745';
+const jsonLimitBytes = Number(process.env.JSON_LIMIT_BYTES || 200 * 1024 * 1024);
+const upstreamTimeoutMs = Number(process.env.UPSTREAM_TIMEOUT_MS || 120000);
+const serviceVersion = 'railway-survey-2026-07-03-1845';
 const cacheTtlMs = Number(process.env.API_CACHE_TTL_MS || 5 * 60 * 1000);
 const apiCache = new Map();
 

@@ -431,7 +431,7 @@
 
     @media (min-width: 520px) {
       .file-actions {
-        grid-template-columns: 1fr 1fr;
+        grid-template-columns: 1fr;
       }
     }
 
@@ -646,10 +646,11 @@
 
       els.sections.innerHTML = state.config.sections.map((section, index) => {
         const questions = questionsBySection[section.code] || [];
+        const title = getSectionTitle(section);
         const description = getSectionDescription(section);
         return `
           <section class="section" data-section-index="${index}" data-section-code="${escapeHtml(section.code)}">
-            <h2>${escapeHtml(section.title)}</h2>
+            <h2>${escapeHtml(title)}</h2>
             ${description ? `<p class="description">${escapeHtml(description)}</p>` : ''}
             ${questions.map(renderQuestion).join('')}
           </section>
@@ -660,8 +661,15 @@
       restoreFormValues();
     }
 
+    function getSectionTitle(section) {
+      if (section.title === 'Промоутеры и BA') return 'Промоутеры и BA конкурентов';
+      if (section.title === 'Фото и проблемные ТТ') return 'Фото BZ';
+      return section.title;
+    }
+
     function getSectionDescription(section) {
       if (section.code === 'general') return '';
+      if (section.title === 'Фото и проблемные ТТ') return '';
       return section.description || '';
     }
 
@@ -745,11 +753,7 @@
             <div class="file-control">
               <div class="file-actions">
                 <label class="file-action primary-file">
-                  Сделать фото
-                  <input data-file-input="${escapeHtml(question.code)}" type="file" accept="image/*" capture="environment" multiple>
-                </label>
-                <label class="file-action">
-                  Выбрать из галереи
+                  Сделать/Загрузить Фото
                   <input data-file-input="${escapeHtml(question.code)}" type="file" accept="image/*" multiple>
                 </label>
               </div>
