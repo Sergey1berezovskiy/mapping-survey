@@ -534,7 +534,7 @@
     const IMAGE_MAX_SIDE = 1600;
     const IMAGE_JPEG_QUALITY = 0.78;
     const FORM_CONFIG_CACHE_KEY = 'mappingSurvey.formConfig.v1';
-    const REFERENCES_CACHE_KEY = 'mappingSurvey.references.v1';
+    const REFERENCES_CACHE_KEY = 'mappingSurvey.references.v2';
     const DRAFT_CACHE_KEY = 'mappingSurvey.draft.v1';
     let draftSaveTimer = null;
 
@@ -880,12 +880,15 @@
         return;
       }
 
-      box.innerHTML = items.map((item) => `
-        <button type="button" data-id="${escapeHtml(item.id)}" data-label="${escapeHtml(item.label)}" data-extra="${escapeHtml(item.extra || '')}" data-manager="${escapeHtml(item.manager || '')}">
+      box.innerHTML = items.map((item) => {
+        const manager = item.manager || extractManagerFromExtra(item.extra);
+        return `
+        <button type="button" data-id="${escapeHtml(item.id)}" data-label="${escapeHtml(item.label)}" data-extra="${escapeHtml(item.extra || '')}" data-manager="${escapeHtml(manager)}">
           ${escapeHtml(item.label)}
           ${item.extra ? `<small>${escapeHtml(item.extra)}</small>` : ''}
         </button>
-      `).join('');
+      `;
+      }).join('');
       box.classList.add('open');
 
       box.querySelectorAll('button').forEach((button) => {
@@ -894,11 +897,12 @@
           const input = field.querySelector('input');
           input.value = button.dataset.label;
           state.answers[code] = button.dataset.label;
+          const manager = button.dataset.manager || extractManagerFromExtra(button.dataset.extra);
           state.referenceLabels[code] = {
             id: button.dataset.id,
             label: button.dataset.label,
             extra: button.dataset.extra || '',
-            manager: button.dataset.manager || '',
+            manager,
           };
           const selectedRef = field.querySelector('.selected-ref');
           if (field.dataset.reference === 'employees') {
@@ -911,11 +915,17 @@
           field.classList.remove('invalid');
           box.classList.remove('open');
           if (field.dataset.reference === 'employees') {
-            applyEmployeeManager(button.dataset.manager || '');
+            applyEmployeeManager(manager);
           }
           saveDraftSoon();
         });
       });
+    }
+
+    function extractManagerFromExtra(extra) {
+      const text = String(extra || '').trim();
+      const match = text.match(/^Руководитель:\s*(.+)$/i);
+      return match ? match[1].trim() : '';
     }
 
     function applyEmployeeManager(managerName) {
