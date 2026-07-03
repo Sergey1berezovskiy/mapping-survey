@@ -86,6 +86,8 @@
     .layout {
       display: grid;
       gap: 12px;
+      max-width: 720px;
+      margin: 0 auto;
     }
 
     .progress,
@@ -466,16 +468,6 @@
     @media (min-width: 760px) {
       .shell {
         padding: 26px;
-      }
-
-      .layout {
-        grid-template-columns: 260px 1fr;
-        align-items: start;
-      }
-
-      .progress {
-        position: sticky;
-        top: 16px;
       }
 
       .section {
