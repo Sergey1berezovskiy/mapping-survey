@@ -421,10 +421,10 @@
     .file-list {
       display: none;
       color: var(--muted);
-      font-size: 13px;
-      line-height: 1.4;
+      font-size: 12px;
+      line-height: 1.3;
       border-radius: 8px;
-      padding: 10px 12px;
+      padding: 8px 10px;
     }
 
     .file-list.show {
@@ -457,13 +457,39 @@
     }
 
     .file-list li {
-      margin: 5px 0;
+      margin: 4px 0;
+    }
+
+    .file-status-title {
+      font-weight: 700;
+    }
+
+    .file-total-size {
+      margin-top: 2px;
+    }
+
+    .file-row,
+    .file-remove-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: start;
+    }
+
+    .file-name {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+
+    .file-size {
+      white-space: nowrap;
+      color: inherit;
+      opacity: 0.82;
     }
 
     .file-remove-row {
-      display: flex;
+      grid-template-columns: auto minmax(0, 1fr) auto;
       gap: 8px;
-      align-items: flex-start;
     }
 
     .file-remove-row input {
@@ -622,12 +648,14 @@
       searchTimers: {},
       fileUploads: {},
       fileNames: {},
+      fileSizes: {},
       references: {},
     };
 
-    const IMAGE_MAX_SIDE = 1024;
-    const IMAGE_JPEG_QUALITY = 0.68;
-    const PHOTO_UPLOAD_BATCH_SIZE = 4;
+    const IMAGE_MAX_SIDE = 960;
+    const IMAGE_JPEG_QUALITY = 0.64;
+    const PHOTO_UPLOAD_BATCH_SIZE = 8;
+    const MAX_SOURCE_FILE_BYTES = 10 * 1024 * 1024;
     const FORM_CONFIG_CACHE_KEY = 'mappingSurvey.formConfig.v1';
     const REFERENCES_CACHE_KEY = 'mappingSurvey.references.v3';
     const DRAFT_CACHE_KEY = 'mappingSurvey.draft.v1';
@@ -878,6 +906,7 @@
           const files = [...input.files];
           const existingUrls = Array.isArray(state.answers[code]) ? state.answers[code] : [];
           const existingNames = Array.isArray(state.fileNames[code]) ? state.fileNames[code] : [];
+          const existingSizes = Array.isArray(state.fileSizes[code]) ? state.fileSizes[code] : [];
           const selectedNames = files.map((file) => file.name || 'photo');
 
           state.fileUploads[code] = { uploading: false, uploaded: false };
@@ -889,23 +918,41 @@
             return;
           }
 
+          const oversized = files.filter((file) => file.size > MAX_SOURCE_FILE_BYTES);
+          if (oversized.length) {
+            renderFileStatus(
+              fileList,
+              'Некоторые фото больше 10 МБ. Удалите их и выберите другие файлы.',
+              oversized.map((file) => file.name || 'photo'),
+              oversized.map((file) => file.size || 0),
+              -1,
+              'error'
+            );
+            field.classList.add('invalid');
+            input.value = '';
+            return;
+          }
+
           fileList.classList.add('show');
-          renderFileStatus(fileList, 'Выбрано файлов', selectedNames);
+          renderFileStatus(fileList, 'Выбрано файлов', selectedNames, files.map((file) => file.size || 0));
           field.classList.remove('invalid');
 
           try {
             state.fileUploads[code] = { uploading: true, uploaded: false };
-            renderFileStatus(fileList, 'Подготавливаем фото', selectedNames, -1, 'uploading');
-            const preparedFiles = [];
-            for (let index = 0; index < files.length; index += 1) {
-              renderFileStatus(fileList, `Подготавливаем фото ${index + 1} из ${files.length}`, selectedNames, index, 'uploading');
-              preparedFiles.push(await readFileAsPayload(files[index]));
-            }
-            const totalSizeMb = preparedFiles.reduce((sum, file) => sum + (file.size || 0), 0) / 1024 / 1024;
-            renderFileStatus(fileList, `Загружаем ${files.length} фото, примерно ${totalSizeMb.toFixed(1)} МБ`, preparedFiles.map((file) => file.name), -1, 'uploading');
+            renderFileStatus(fileList, 'Подготавливаем фото', selectedNames, files.map((file) => file.size || 0), -1, 'uploading');
+            let preparedCount = 0;
+            const preparedFiles = await Promise.all(files.map(async (file, index) => {
+              renderFileStatus(fileList, `Подготавливаем фото: ${preparedCount + 1} из ${files.length}`, selectedNames, files.map((item) => item.size || 0), index, 'uploading');
+              const prepared = await readFileAsPayload(file);
+              preparedCount += 1;
+              renderFileStatus(fileList, `Подготовлено фото: ${preparedCount} из ${files.length}`, selectedNames, files.map((item) => item.size || 0), index, 'uploading');
+              return prepared;
+            }));
+            renderFileStatus(fileList, `Загружаем ${files.length} фото`, preparedFiles.map((file) => file.name), preparedFiles.map((file) => file.size || 0), -1, 'uploading');
 
             let urls = [];
             let uploadedNames = [];
+            let uploadedSizes = [];
             try {
               for (let start = 0; start < preparedFiles.length; start += PHOTO_UPLOAD_BATCH_SIZE) {
                 const batch = preparedFiles.slice(start, start + PHOTO_UPLOAD_BATCH_SIZE);
@@ -913,23 +960,27 @@
                   fileList,
                   `Загружаем фото ${start + 1}-${Math.min(start + batch.length, preparedFiles.length)} из ${preparedFiles.length}`,
                   preparedFiles.map((file) => file.name),
+                  preparedFiles.map((file) => file.size || 0),
                   start,
                   'uploading'
                 );
                 const batchUrls = await apiCall('uploadQuestionFiles', { questionCode: code, files: batch });
                 urls.push(...batchUrls);
                 uploadedNames.push(...batch.map((file) => file.name));
+                uploadedSizes.push(...batch.map((file) => file.size || 0));
               }
               state.answers[code] = existingUrls.concat(urls);
               state.fileNames[code] = existingNames.concat(uploadedNames);
+              state.fileSizes[code] = existingSizes.concat(uploadedSizes);
               state.fileUploads[code] = { uploading: false, uploaded: true };
-              renderFileStatus(fileList, `Загружено файлов: ${state.answers[code].length}`, state.fileNames[code], -1, 'uploaded', true, code);
+              renderFileStatus(fileList, `Загружено файлов: ${state.answers[code].length}`, state.fileNames[code], state.fileSizes[code], -1, 'uploaded', true, code);
               field.classList.remove('invalid');
               input.value = '';
               saveDraftSoon();
             } catch (error) {
               state.answers[code] = existingUrls.concat(urls);
               state.fileNames[code] = existingNames.concat(uploadedNames);
+              state.fileSizes[code] = existingSizes.concat(uploadedSizes);
               state.fileUploads[code] = { uploading: false, uploaded: false };
               renderFileStatus(
                 fileList,
@@ -937,6 +988,7 @@
                   ? `Часть фото загружена (${state.answers[code].length}). Ошибка: ${error && error.message ? error.message : error}`
                   : `Ошибка загрузки: ${error && error.message ? error.message : error}`,
                 state.fileNames[code],
+                state.fileSizes[code],
                 -1,
                 urls.length ? 'uploaded' : 'error',
                 Boolean(urls.length),
@@ -948,8 +1000,9 @@
           } catch (error) {
             state.answers[code] = existingUrls;
             state.fileNames[code] = existingNames;
+            state.fileSizes[code] = existingSizes;
             state.fileUploads[code] = { uploading: false, uploaded: false };
-            renderFileStatus(fileList, 'Не удалось прочитать файл. Попробуйте выбрать фото еще раз.', [], -1, 'error');
+            renderFileStatus(fileList, 'Не удалось прочитать файл. Попробуйте выбрать фото еще раз.', [], [], -1, 'error');
             field.classList.add('invalid');
           }
         });
@@ -973,9 +1026,11 @@
             .filter((_, index) => !removeSet.has(index));
           state.fileNames[code] = (Array.isArray(state.fileNames[code]) ? state.fileNames[code] : [])
             .filter((_, index) => !removeSet.has(index));
+          state.fileSizes[code] = (Array.isArray(state.fileSizes[code]) ? state.fileSizes[code] : [])
+            .filter((_, index) => !removeSet.has(index));
 
           if (state.answers[code].length) {
-            renderFileStatus(fileList, `Загружено файлов: ${state.answers[code].length}`, state.fileNames[code], -1, 'uploaded', true, code);
+            renderFileStatus(fileList, `Загружено файлов: ${state.answers[code].length}`, state.fileNames[code], state.fileSizes[code], -1, 'uploaded', true, code);
           } else {
             fileList.textContent = '';
             fileList.className = 'file-list';
@@ -998,6 +1053,7 @@
           } else {
             chip.classList.toggle('active');
             enforceExclusiveBrandZoneAbsence(field, chip);
+            enforceExclusiveBrandDisplayAbsence(field, chip);
             state.answers[code] = [...field.querySelectorAll('.chip.active')].map((item) => item.dataset.option);
           }
 
@@ -1335,11 +1391,13 @@
         .replaceAll("'", '&#039;');
     }
 
-    function renderFileStatus(fileList, title, names = [], activeIndex = -1, status = '', removable = false, code = '') {
+    function renderFileStatus(fileList, title, names = [], sizes = [], activeIndex = -1, status = '', removable = false, code = '') {
       const safeNames = names.filter(Boolean);
+      const totalSize = sizes.reduce((sum, size) => sum + (Number(size) || 0), 0);
       fileList.className = ['file-list', 'show', status].filter(Boolean).join(' ');
       fileList.innerHTML = `
-        <div>${escapeHtml(title)}</div>
+        <div class="file-status-title">${escapeHtml(title)}</div>
+        ${totalSize ? `<div class="file-total-size">Общий размер: ${formatBytes(totalSize)}</div>` : ''}
         ${safeNames.length ? `
           <ul>
             ${safeNames.map((name, index) => `
@@ -1347,15 +1405,29 @@
                 ${removable ? `
                   <label class="file-remove-row">
                     <input type="checkbox" data-remove-file-index="${index}">
-                    <span>${escapeHtml(name)}</span>
+                    <span class="file-name">${escapeHtml(name)}</span>
+                    <span class="file-size">${formatBytes(sizes[index] || 0)}</span>
                   </label>
-                ` : `${index === activeIndex ? 'Обрабатываем: ' : ''}${escapeHtml(name)}`}
+                ` : `
+                  <div class="file-row">
+                    <span class="file-name">${index === activeIndex ? 'Обрабатываем: ' : ''}${escapeHtml(name)}</span>
+                    <span class="file-size">${formatBytes(sizes[index] || 0)}</span>
+                  </div>
+                `}
               </li>
             `).join('')}
           </ul>
           ${removable ? `<button class="file-remove-btn" type="button" data-remove-files="${escapeHtml(code)}">Удалить выбранные</button>` : ''}
         ` : ''}
       `;
+    }
+
+    function formatBytes(bytes) {
+      const value = Number(bytes) || 0;
+      if (!value) return '';
+      const mb = value / 1024 / 1024;
+      if (mb >= 1) return `${mb.toFixed(1)} МБ`;
+      return `${Math.max(1, Math.round(value / 1024))} КБ`;
     }
 
     async function readFileAsPayload(file) {
@@ -1467,6 +1539,7 @@
         state.answers = draft.answers || {};
         state.referenceLabels = draft.referenceLabels || {};
         state.fileNames = draft.fileNames || {};
+        state.fileSizes = draft.fileSizes || {};
         state.sectionIndex = Number.isFinite(Number(draft.sectionIndex)) ? Number(draft.sectionIndex) : 0;
       } catch (error) {}
     }
@@ -1484,6 +1557,7 @@
           answers: state.answers,
           referenceLabels: state.referenceLabels,
           fileNames: state.fileNames,
+          fileSizes: state.fileSizes,
         }));
         if (els.status.textContent !== 'Офлайн') els.status.textContent = 'Черновик';
       } catch (error) {}
@@ -1501,6 +1575,7 @@
       state.referenceLabels = {};
       state.fileUploads = {};
       state.fileNames = {};
+      state.fileSizes = {};
       state.sectionIndex = 0;
     }
 
@@ -1544,7 +1619,8 @@
           const names = Array.isArray(state.fileNames[code]) && state.fileNames[code].length
             ? state.fileNames[code]
             : value.map((_, index) => `Фото ${index + 1}`);
-          renderFileStatus(fileList, `Уже загружено файлов: ${value.length}`, names, -1, 'uploaded', true, code);
+          const sizes = Array.isArray(state.fileSizes[code]) ? state.fileSizes[code] : [];
+          renderFileStatus(fileList, `Уже загружено файлов: ${value.length}`, names, sizes, -1, 'uploaded', true, code);
           return;
         }
 
@@ -1580,6 +1656,24 @@
     function enforceExclusiveBrandZoneAbsence(field, clickedChip) {
       if (!field.dataset.code.startsWith('bz_categories_')) return;
       const absentOption = 'БЗ отсутствует';
+
+      if (clickedChip.dataset.option === absentOption && clickedChip.classList.contains('active')) {
+        field.querySelectorAll('.chip').forEach((chip) => {
+          chip.classList.toggle('active', chip.dataset.option === absentOption);
+        });
+        return;
+      }
+
+      if (clickedChip.dataset.option !== absentOption && clickedChip.classList.contains('active')) {
+        field.querySelectorAll('.chip').forEach((chip) => {
+          if (chip.dataset.option === absentOption) chip.classList.remove('active');
+        });
+      }
+    }
+
+    function enforceExclusiveBrandDisplayAbsence(field, clickedChip) {
+      if (!isBrandDisplayField(field)) return;
+      const absentOption = 'Выкладка отсутствует';
 
       if (clickedChip.dataset.option === absentOption && clickedChip.classList.contains('active')) {
         field.querySelectorAll('.chip').forEach((chip) => {
