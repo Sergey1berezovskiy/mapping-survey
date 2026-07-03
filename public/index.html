@@ -353,6 +353,33 @@
       display: block;
     }
 
+    .auto-details {
+      display: none;
+      grid-template-columns: 1fr;
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    .auto-details.show {
+      display: grid;
+    }
+
+    .auto-field {
+      display: grid;
+      gap: 6px;
+    }
+
+    .auto-field span {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .auto-field input {
+      background: #f7faf8;
+      color: #0f5d53;
+    }
+
     .file-control {
       display: grid;
       gap: 9px;
@@ -534,7 +561,7 @@
     const IMAGE_MAX_SIDE = 1600;
     const IMAGE_JPEG_QUALITY = 0.78;
     const FORM_CONFIG_CACHE_KEY = 'mappingSurvey.formConfig.v1';
-    const REFERENCES_CACHE_KEY = 'mappingSurvey.references.v2';
+    const REFERENCES_CACHE_KEY = 'mappingSurvey.references.v3';
     const DRAFT_CACHE_KEY = 'mappingSurvey.draft.v1';
     let draftSaveTimer = null;
 
@@ -619,10 +646,11 @@
 
       els.sections.innerHTML = state.config.sections.map((section, index) => {
         const questions = questionsBySection[section.code] || [];
+        const description = getSectionDescription(section);
         return `
           <section class="section" data-section-index="${index}" data-section-code="${escapeHtml(section.code)}">
             <h2>${escapeHtml(section.title)}</h2>
-            <p class="description">${escapeHtml(section.description || '')}</p>
+            ${description ? `<p class="description">${escapeHtml(description)}</p>` : ''}
             ${questions.map(renderQuestion).join('')}
           </section>
         `;
@@ -632,9 +660,22 @@
       restoreFormValues();
     }
 
+    function getSectionDescription(section) {
+      if (section.code === 'general') return '';
+      return section.description || '';
+    }
+
+    function getQuestionHint(question) {
+      if (question.code === 'employee_full_name') return 'Введите свое ФИО';
+      if (question.code === 'manager_full_name') return '';
+      if (question.code === 'store_network_address') return 'Введите адрес/сеть/rms код';
+      return question.hint || '';
+    }
+
     function renderQuestion(question) {
       const requiredMark = question.required ? '<span class="required-mark">&nbsp;*</span>' : '';
-      const hint = question.hint ? `<div class="hint">${escapeHtml(question.hint)}</div>` : '';
+      const hintText = getQuestionHint(question);
+      const hint = hintText ? `<div class="hint">${escapeHtml(hintText)}</div>` : '';
       const error = '<div class="error">Заполните это поле.</div>';
       const effectiveType = getEffectiveQuestionType(question);
       const groupAttr = escapeHtml(question.group || '');
@@ -670,12 +711,27 @@
       }
 
       if (question.type === 'reference_autocomplete') {
+        const storeDetails = question.code === 'store_network_address'
+          ? `
+            <div class="auto-details" data-store-details>
+              <label class="auto-field">
+                <span>Канал</span>
+                <input data-store-channel readonly tabindex="-1">
+              </label>
+              <label class="auto-field">
+                <span>Адрес</span>
+                <input data-store-address readonly tabindex="-1">
+              </label>
+            </div>
+          `
+          : '';
         return `
           <div class="field" data-code="${escapeHtml(question.code)}" data-type="${escapeHtml(effectiveType)}" data-original-type="${escapeHtml(question.type)}" data-group="${groupAttr}" data-reference="${escapeHtml(question.optionSet)}" data-required="${question.required}">
             <label>${escapeHtml(question.text)}${requiredMark}</label>
             <input data-input="${escapeHtml(question.code)}" autocomplete="off" placeholder="Начните вводить">
             <div class="suggestions"></div>
             <div class="selected-ref"></div>
+            ${storeDetails}
             ${hint}
             <div class="error">Выберите значение из справочника.</div>
           </div>
@@ -728,6 +784,9 @@
             const selectedRef = field.querySelector('.selected-ref');
             selectedRef.textContent = '';
             selectedRef.classList.remove('show');
+            if (field.dataset.reference === 'stores') {
+              updateStoreDetails(field, {});
+            }
           }
           field.classList.remove('invalid');
 
@@ -883,7 +942,7 @@
       box.innerHTML = items.map((item) => {
         const manager = item.manager || extractManagerFromExtra(item.extra);
         return `
-        <button type="button" data-id="${escapeHtml(item.id)}" data-label="${escapeHtml(item.label)}" data-extra="${escapeHtml(item.extra || '')}" data-manager="${escapeHtml(manager)}">
+        <button type="button" data-id="${escapeHtml(item.id)}" data-label="${escapeHtml(item.label)}" data-extra="${escapeHtml(item.extra || '')}" data-manager="${escapeHtml(manager)}" data-channel="${escapeHtml(item.channel || '')}" data-address="${escapeHtml(item.address || item.extra || '')}">
           ${escapeHtml(item.label)}
           ${item.extra ? `<small>${escapeHtml(item.extra)}</small>` : ''}
         </button>
@@ -903,9 +962,11 @@
             label: button.dataset.label,
             extra: button.dataset.extra || '',
             manager,
+            channel: button.dataset.channel || '',
+            address: button.dataset.address || '',
           };
           const selectedRef = field.querySelector('.selected-ref');
-          if (field.dataset.reference === 'employees') {
+          if (field.dataset.reference === 'employees' || field.dataset.reference === 'stores') {
             selectedRef.textContent = '';
             selectedRef.classList.remove('show');
           } else {
@@ -917,9 +978,29 @@
           if (field.dataset.reference === 'employees') {
             applyEmployeeManager(manager);
           }
+          if (field.dataset.reference === 'stores') {
+            updateStoreDetails(field, {
+              channel: button.dataset.channel || '',
+              address: button.dataset.address || '',
+            });
+          }
           saveDraftSoon();
         });
       });
+    }
+
+    function updateStoreDetails(field, details) {
+      const box = field.querySelector('[data-store-details]');
+      if (!box) return;
+
+      const channelInput = box.querySelector('[data-store-channel]');
+      const addressInput = box.querySelector('[data-store-address]');
+      const channel = details && details.channel ? details.channel : '';
+      const address = details && details.address ? details.address : '';
+
+      channelInput.value = channel;
+      addressInput.value = address;
+      box.classList.toggle('show', Boolean(channel || address));
     }
 
     function extractManagerFromExtra(extra) {
@@ -1292,6 +1373,10 @@
         if (field.dataset.type === 'reference_autocomplete') {
           const selected = state.referenceLabels[code];
           const selectedRef = field.querySelector('.selected-ref');
+          if (field.dataset.reference === 'stores') {
+            updateStoreDetails(field, selected || {});
+            return;
+          }
           if (selected && selected.extra) {
             selectedRef.textContent = selected.extra;
             selectedRef.classList.add('show');
