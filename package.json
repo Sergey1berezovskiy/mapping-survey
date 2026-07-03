@@ -1,0 +1,13 @@
+{
+  "name": "mapping-survey-railway",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:index": "node build-railway-index.cjs",
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
