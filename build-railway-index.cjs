@@ -232,11 +232,11 @@ html = html
   )
   .replace(
     'const IMAGE_MAX_SIDE = 1600;',
-    'const IMAGE_MAX_SIDE = 1024;'
+    'const IMAGE_MAX_SIDE = 720;'
   )
   .replace(
     'const IMAGE_JPEG_QUALITY = 0.78;',
-    'const IMAGE_JPEG_QUALITY = 0.68;\n    const PHOTO_UPLOAD_BATCH_SIZE = 4;'
+    'const IMAGE_JPEG_QUALITY = 0.58;\n    const PHOTO_UPLOAD_BATCH_SIZE = 1;\n    const MAX_SOURCE_FILE_BYTES = 10 * 1024 * 1024;'
   )
   .replace(
     '      fileUploads: {},\n      references: {},',

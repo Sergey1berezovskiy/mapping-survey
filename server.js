@@ -149,6 +149,12 @@ async function callAppsScript(action, params) {
       payload = JSON.parse(text);
     } catch {
       const sample = text.replace(/\s+/g, ' ').slice(0, 300);
+      const looksLikeHtml = /^<!doctype html|^<html|<title>/i.test(sample);
+      if (looksLikeHtml && action === 'uploadQuestionFiles') {
+        throw new Error(
+          'Apps Script не принял загрузку фото и вернул HTML вместо ответа. Фото будут загружаться по одному; если ошибка повторится, выберите меньше фото за раз.'
+        );
+      }
       throw new Error(
         `Apps Script returned non-JSON response. Check deployment access and APPS_SCRIPT_URL. Response: ${sample}`
       );
