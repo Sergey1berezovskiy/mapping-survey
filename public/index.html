@@ -423,19 +423,76 @@
       color: var(--muted);
       font-size: 13px;
       line-height: 1.4;
+      border-radius: 8px;
+      padding: 10px 12px;
     }
 
     .file-list.show {
       display: block;
     }
 
+    .file-list.uploading {
+      background: #fff1f6;
+      border: 1px solid #f4b7ca;
+      color: #b21f57;
+      animation: uploadPulse 1.1s ease-in-out infinite;
+    }
+
+    .file-list.uploaded {
+      background: #e7f6ef;
+      border: 1px solid #a8ddc6;
+      color: #0f6b4f;
+    }
+
+    .file-list.error {
+      background: #fff4f3;
+      border: 1px solid #efb2ad;
+      color: var(--danger);
+    }
+
     .file-list ul {
       margin: 6px 0 0;
-      padding-left: 18px;
+      padding-left: 0;
+      list-style: none;
     }
 
     .file-list li {
-      margin: 2px 0;
+      margin: 5px 0;
+    }
+
+    .file-remove-row {
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+    }
+
+    .file-remove-row input {
+      width: auto;
+      margin-top: 2px;
+    }
+
+    .file-remove-btn {
+      margin-top: 8px;
+      min-height: 34px;
+      border: 1px solid var(--danger);
+      border-radius: 8px;
+      background: #fff;
+      color: var(--danger);
+      padding: 0 12px;
+      font: inherit;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    @keyframes uploadPulse {
+      0%, 100% {
+        box-shadow: 0 0 0 0 rgba(178, 31, 87, 0.16);
+      }
+
+      50% {
+        box-shadow: 0 0 0 5px rgba(178, 31, 87, 0.08);
+      }
     }
 
     @media (min-width: 520px) {
@@ -568,8 +625,9 @@
       references: {},
     };
 
-    const IMAGE_MAX_SIDE = 1280;
-    const IMAGE_JPEG_QUALITY = 0.72;
+    const IMAGE_MAX_SIDE = 1024;
+    const IMAGE_JPEG_QUALITY = 0.68;
+    const PHOTO_UPLOAD_BATCH_SIZE = 4;
     const FORM_CONFIG_CACHE_KEY = 'mappingSurvey.formConfig.v1';
     const REFERENCES_CACHE_KEY = 'mappingSurvey.references.v3';
     const DRAFT_CACHE_KEY = 'mappingSurvey.draft.v1';
@@ -591,7 +649,8 @@
 
     async function apiCall(action, params = {}) {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 25000);
+      const timeoutMs = action === 'submitSurvey' || action === 'uploadQuestionFiles' ? 120000 : 25000;
+      const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
       let response;
       try {
@@ -603,7 +662,7 @@
         });
       } catch (error) {
         if (error && error.name === 'AbortError') {
-          throw new Error('Сервер не ответил за 25 секунд. Проверьте Railway Variables и Apps Script deployment.');
+          throw new Error('Сервер не ответил за ' + Math.round(timeoutMs / 1000) + ' секунд. Проверьте Railway Variables и Apps Script deployment.');
         }
         throw error;
       } finally {
@@ -836,38 +895,93 @@
 
           try {
             state.fileUploads[code] = { uploading: true, uploaded: false };
-            renderFileStatus(fileList, 'Подготавливаем фото', selectedNames);
+            renderFileStatus(fileList, 'Подготавливаем фото', selectedNames, -1, 'uploading');
             const preparedFiles = [];
             for (let index = 0; index < files.length; index += 1) {
-              renderFileStatus(fileList, `Подготавливаем фото ${index + 1} из ${files.length}`, selectedNames, index);
+              renderFileStatus(fileList, `Подготавливаем фото ${index + 1} из ${files.length}`, selectedNames, index, 'uploading');
               preparedFiles.push(await readFileAsPayload(files[index]));
             }
             const totalSizeMb = preparedFiles.reduce((sum, file) => sum + (file.size || 0), 0) / 1024 / 1024;
-            renderFileStatus(fileList, `Загружаем ${files.length} фото, примерно ${totalSizeMb.toFixed(1)} МБ`, preparedFiles.map((file) => file.name));
+            renderFileStatus(fileList, `Загружаем ${files.length} фото, примерно ${totalSizeMb.toFixed(1)} МБ`, preparedFiles.map((file) => file.name), -1, 'uploading');
 
+            let urls = [];
+            let uploadedNames = [];
             try {
-              const urls = await apiCall('uploadQuestionFiles', { questionCode: code, files: preparedFiles });
+              for (let start = 0; start < preparedFiles.length; start += PHOTO_UPLOAD_BATCH_SIZE) {
+                const batch = preparedFiles.slice(start, start + PHOTO_UPLOAD_BATCH_SIZE);
+                renderFileStatus(
+                  fileList,
+                  `Загружаем фото ${start + 1}-${Math.min(start + batch.length, preparedFiles.length)} из ${preparedFiles.length}`,
+                  preparedFiles.map((file) => file.name),
+                  start,
+                  'uploading'
+                );
+                const batchUrls = await apiCall('uploadQuestionFiles', { questionCode: code, files: batch });
+                urls.push(...batchUrls);
+                uploadedNames.push(...batch.map((file) => file.name));
+              }
               state.answers[code] = existingUrls.concat(urls);
-              state.fileNames[code] = existingNames.concat(preparedFiles.map((file) => file.name));
+              state.fileNames[code] = existingNames.concat(uploadedNames);
               state.fileUploads[code] = { uploading: false, uploaded: true };
-              renderFileStatus(fileList, `Загружено файлов: ${state.answers[code].length}`, state.fileNames[code]);
+              renderFileStatus(fileList, `Загружено файлов: ${state.answers[code].length}`, state.fileNames[code], -1, 'uploaded', true, code);
               field.classList.remove('invalid');
               input.value = '';
               saveDraftSoon();
             } catch (error) {
-              state.answers[code] = existingUrls;
-              state.fileNames[code] = existingNames;
+              state.answers[code] = existingUrls.concat(urls);
+              state.fileNames[code] = existingNames.concat(uploadedNames);
               state.fileUploads[code] = { uploading: false, uploaded: false };
-              fileList.textContent = `Ошибка загрузки: ${error && error.message ? error.message : error}`;
-              field.classList.add('invalid');
+              renderFileStatus(
+                fileList,
+                urls.length
+                  ? `Часть фото загружена (${state.answers[code].length}). Ошибка: ${error && error.message ? error.message : error}`
+                  : `Ошибка загрузки: ${error && error.message ? error.message : error}`,
+                state.fileNames[code],
+                -1,
+                urls.length ? 'uploaded' : 'error',
+                Boolean(urls.length),
+                code
+              );
+              field.classList.toggle('invalid', !urls.length);
+              saveDraftSoon();
             }
           } catch (error) {
             state.answers[code] = existingUrls;
             state.fileNames[code] = existingNames;
             state.fileUploads[code] = { uploading: false, uploaded: false };
-            fileList.textContent = 'Не удалось прочитать файл. Попробуйте выбрать фото еще раз.';
+            renderFileStatus(fileList, 'Не удалось прочитать файл. Попробуйте выбрать фото еще раз.', [], -1, 'error');
             field.classList.add('invalid');
           }
+        });
+      });
+
+      document.querySelectorAll('.file-list').forEach((fileList) => {
+        fileList.addEventListener('click', (event) => {
+          const button = event.target.closest('[data-remove-files]');
+          if (!button) return;
+
+          const code = button.dataset.removeFiles;
+          const field = button.closest('.field');
+          const selectedIndexes = [...fileList.querySelectorAll('[data-remove-file-index]:checked')]
+            .map((input) => Number(input.dataset.removeFileIndex))
+            .filter(Number.isFinite);
+
+          if (!selectedIndexes.length) return;
+
+          const removeSet = new Set(selectedIndexes);
+          state.answers[code] = (Array.isArray(state.answers[code]) ? state.answers[code] : [])
+            .filter((_, index) => !removeSet.has(index));
+          state.fileNames[code] = (Array.isArray(state.fileNames[code]) ? state.fileNames[code] : [])
+            .filter((_, index) => !removeSet.has(index));
+
+          if (state.answers[code].length) {
+            renderFileStatus(fileList, `Загружено файлов: ${state.answers[code].length}`, state.fileNames[code], -1, 'uploaded', true, code);
+          } else {
+            fileList.textContent = '';
+            fileList.className = 'file-list';
+            field.classList.remove('invalid');
+          }
+          saveDraftSoon();
         });
       });
 
@@ -1221,19 +1335,27 @@
         .replaceAll("'", '&#039;');
     }
 
-    function renderFileStatus(fileList, title, names = [], activeIndex = -1) {
+    function renderFileStatus(fileList, title, names = [], activeIndex = -1, status = '', removable = false, code = '') {
       const safeNames = names.filter(Boolean);
+      fileList.className = ['file-list', 'show', status].filter(Boolean).join(' ');
       fileList.innerHTML = `
         <div>${escapeHtml(title)}</div>
         ${safeNames.length ? `
           <ul>
             ${safeNames.map((name, index) => `
-              <li>${index === activeIndex ? 'Обрабатываем: ' : ''}${escapeHtml(name)}</li>
+              <li>
+                ${removable ? `
+                  <label class="file-remove-row">
+                    <input type="checkbox" data-remove-file-index="${index}">
+                    <span>${escapeHtml(name)}</span>
+                  </label>
+                ` : `${index === activeIndex ? 'Обрабатываем: ' : ''}${escapeHtml(name)}`}
+              </li>
             `).join('')}
           </ul>
+          ${removable ? `<button class="file-remove-btn" type="button" data-remove-files="${escapeHtml(code)}">Удалить выбранные</button>` : ''}
         ` : ''}
       `;
-      fileList.classList.add('show');
     }
 
     async function readFileAsPayload(file) {
@@ -1422,7 +1544,7 @@
           const names = Array.isArray(state.fileNames[code]) && state.fileNames[code].length
             ? state.fileNames[code]
             : value.map((_, index) => `Фото ${index + 1}`);
-          renderFileStatus(fileList, `Уже загружено файлов: ${value.length}`, names);
+          renderFileStatus(fileList, `Уже загружено файлов: ${value.length}`, names, -1, 'uploaded', true, code);
           return;
         }
 
