@@ -34,14 +34,18 @@
     }
 
     header {
-      display: flex;
-      justify-content: center;
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
       gap: 12px;
       align-items: center;
       padding: 10px 0 16px;
       text-align: center;
       max-width: 720px;
       margin: 0 auto;
+    }
+
+    header > div:first-child {
+      grid-column: 2;
     }
 
     h1 {
@@ -69,8 +73,9 @@
     .header-actions {
       display: flex;
       flex-wrap: wrap;
-      justify-content: center;
+      justify-content: flex-end;
       gap: 8px;
+      grid-column: 3;
     }
 
     .new-survey-btn {
@@ -488,7 +493,7 @@
         <h1>Mapping</h1>
       </div>
       <div class="header-actions">
-        <button class="new-survey-btn" type="button" id="newSurveyTopBtn">Новый опросник</button>
+        <button class="new-survey-btn" type="button" id="newSurveyTopBtn">Очистить форму</button>
         <div class="badge" id="status" hidden></div>
       </div>
     </header>
@@ -893,10 +898,16 @@
             id: button.dataset.id,
             label: button.dataset.label,
             extra: button.dataset.extra || '',
+            manager: button.dataset.manager || '',
           };
           const selectedRef = field.querySelector('.selected-ref');
-          selectedRef.textContent = button.dataset.extra || '';
-          selectedRef.classList.toggle('show', Boolean(button.dataset.extra));
+          if (field.dataset.reference === 'employees') {
+            selectedRef.textContent = '';
+            selectedRef.classList.remove('show');
+          } else {
+            selectedRef.textContent = button.dataset.extra || '';
+            selectedRef.classList.toggle('show', Boolean(button.dataset.extra));
+          }
           field.classList.remove('invalid');
           box.classList.remove('open');
           if (field.dataset.reference === 'employees') {
@@ -933,6 +944,13 @@
       selectedRef.textContent = managerItem.extra || '';
       selectedRef.classList.toggle('show', Boolean(managerItem.extra));
       field.classList.remove('invalid');
+    }
+
+    function syncSelectedEmployeeManager() {
+      const employee = state.referenceLabels.employee_full_name;
+      if (employee && employee.manager) {
+        applyEmployeeManager(employee.manager);
+      }
     }
 
     function findReferenceByLabel(type, label) {
