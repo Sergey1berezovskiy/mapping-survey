@@ -527,11 +527,13 @@
       referenceLabels: {},
       searchTimers: {},
       fileUploads: {},
+      references: {},
     };
 
     const IMAGE_MAX_SIDE = 1600;
     const IMAGE_JPEG_QUALITY = 0.78;
     const FORM_CONFIG_CACHE_KEY = 'mappingSurvey.formConfig.v1';
+    const REFERENCES_CACHE_KEY = 'mappingSurvey.references.v1';
     const DRAFT_CACHE_KEY = 'mappingSurvey.draft.v1';
     let draftSaveTimer = null;
 
@@ -579,6 +581,7 @@
 
     async function boot() {
       loadDraft();
+      state.references = loadStoredReferences() || {};
 
       const cachedConfig = loadStoredConfig();
       if (cachedConfig) {
@@ -588,6 +591,7 @@
         els.app.style.display = 'grid';
         els.status.textContent = 'Кэш';
         showSection(state.sectionIndex || 0, false);
+        refreshReferences();
       }
 
       try {
@@ -599,6 +603,7 @@
         els.app.style.display = 'grid';
         els.status.textContent = 'Черновик';
         showSection(state.sectionIndex || 0, false);
+        refreshReferences();
       } catch (error) {
         if (cachedConfig) {
           els.status.textContent = 'Офлайн';
@@ -825,13 +830,45 @@
       }
 
       state.searchTimers[code] = setTimeout(async () => {
+        const localItems = searchLocalReferences(type, query);
+        if (localItems) {
+          renderSuggestions(field, localItems);
+          return;
+        }
+
         try {
           const items = await apiCall('searchReference', { type, query });
           renderSuggestions(field, items);
         } catch (error) {
           showError(error);
         }
-      }, 220);
+      }, 120);
+    }
+
+    function searchLocalReferences(type, query) {
+      const items = state.references && Array.isArray(state.references[type])
+        ? state.references[type]
+        : null;
+      if (!items || !items.length) return null;
+
+      const tokens = normalizeSearchText(query).split(' ').filter(Boolean);
+      if (!tokens.length) return [];
+
+      return items
+        .filter((item) => {
+          const haystack = item.normalizedSearch || normalizeSearchText([item.search, item.label, item.extra].filter(Boolean).join(' '));
+          return tokens.every((token) => haystack.includes(token));
+        })
+        .slice(0, 10);
+    }
+
+    function normalizeSearchText(value) {
+      return String(value || '')
+        .toLowerCase()
+        .replace(/ё/g, 'е')
+        .replace(/[^a-zа-я0-9]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
     }
 
     function renderSuggestions(field, items) {
@@ -1072,6 +1109,32 @@
         localStorage.setItem(FORM_CONFIG_CACHE_KEY, JSON.stringify({
           savedAt: Date.now(),
           config,
+        }));
+      } catch (error) {}
+    }
+
+    async function refreshReferences() {
+      try {
+        const references = await apiCall('getReferences');
+        state.references = references || {};
+        saveStoredReferences(state.references);
+      } catch (error) {}
+    }
+
+    function loadStoredReferences() {
+      try {
+        const raw = localStorage.getItem(REFERENCES_CACHE_KEY);
+        return raw ? JSON.parse(raw).references : null;
+      } catch (error) {
+        return null;
+      }
+    }
+
+    function saveStoredReferences(references) {
+      try {
+        localStorage.setItem(REFERENCES_CACHE_KEY, JSON.stringify({
+          savedAt: Date.now(),
+          references,
         }));
       } catch (error) {}
     }

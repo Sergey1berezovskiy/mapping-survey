@@ -5,6 +5,26 @@ const dest = './public/index.html';
 
 let html = fs.readFileSync(src, 'utf8');
 
+function replaceRange(source, startNeedle, endNeedle, replacement) {
+  const start = source.indexOf(startNeedle);
+  if (start === -1) throw new Error(`Start marker not found: ${startNeedle}`);
+
+  const end = source.indexOf(endNeedle, start);
+  if (end === -1) throw new Error(`End marker not found: ${endNeedle}`);
+
+  return source.slice(0, start) + replacement + source.slice(end);
+}
+
+function replaceUntilAfter(source, startNeedle, endNeedle, replacement) {
+  const start = source.indexOf(startNeedle);
+  if (start === -1) throw new Error(`Start marker not found: ${startNeedle}`);
+
+  const end = source.indexOf(endNeedle, start);
+  if (end === -1) throw new Error(`End marker not found: ${endNeedle}`);
+
+  return source.slice(0, start) + replacement + source.slice(end + endNeedle.length);
+}
+
 html = html.replace(
   "    };\n\n    function boot()",
   `    };
@@ -40,41 +60,13 @@ html = html.replace(
     function boot()`
 );
 
-html = html.replace(
-  `function boot() {
-      loadDraft();
-
-      const cachedConfig = loadStoredConfig();
-      if (cachedConfig) {
-        state.config = cachedConfig;
-        renderForm();
-        els.loading.style.display = 'none';
-        els.app.style.display = 'grid';
-        els.status.textContent = 'Кэш';
-        showSection(state.sectionIndex || 0, false);
-      }
-
-      google.script.run
-        .withSuccessHandler((config) => {
-          saveStoredConfig(config);
-          state.config = config;
-          renderForm();
-          els.loading.style.display = 'none';
-          els.app.style.display = 'grid';
-          els.status.textContent = 'Черновик';
-          showSection(state.sectionIndex || 0, false);
-        })
-        .withFailureHandler((error) => {
-          if (cachedConfig) {
-            els.status.textContent = 'Офлайн';
-            return;
-          }
-          showError(error);
-        })
-        .getFormConfig();
-    }`,
+html = replaceRange(
+  html,
+  'function boot() {',
+  'function renderForm() {',
   `async function boot() {
       loadDraft();
+      state.references = loadStoredReferences() || {};
 
       const cachedConfig = loadStoredConfig();
       if (cachedConfig) {
@@ -84,6 +76,7 @@ html = html.replace(
         els.app.style.display = 'grid';
         els.status.textContent = 'Кэш';
         showSection(state.sectionIndex || 0, false);
+        refreshReferences();
       }
 
       try {
@@ -95,6 +88,7 @@ html = html.replace(
         els.app.style.display = 'grid';
         els.status.textContent = 'Черновик';
         showSection(state.sectionIndex || 0, false);
+        refreshReferences();
       } catch (error) {
         if (cachedConfig) {
           els.status.textContent = 'Офлайн';
@@ -102,26 +96,15 @@ html = html.replace(
         }
         showError(error);
       }
-    }`
+    }
+
+    `
 );
 
-html = html.replace(
-  `google.script.run
-              .withSuccessHandler((urls) => {
-                state.answers[code] = existingUrls.concat(urls);
-                state.fileUploads[code] = { uploading: false, uploaded: true };
-                fileList.textContent = \`Загружено файлов: \${state.answers[code].length}\`;
-                field.classList.remove('invalid');
-                input.value = '';
-                saveDraftSoon();
-              })
-              .withFailureHandler((error) => {
-                state.answers[code] = existingUrls;
-                state.fileUploads[code] = { uploading: false, uploaded: false };
-                fileList.textContent = \`Ошибка загрузки: \${error && error.message ? error.message : error}\`;
-                field.classList.add('invalid');
-              })
-              .uploadQuestionFiles(code, preparedFiles);`,
+html = replaceUntilAfter(
+  html,
+  'google.script.run\n              .withSuccessHandler((urls)',
+  '              .uploadQuestionFiles(code, preparedFiles);',
   `try {
               const urls = await apiCall('uploadQuestionFiles', { questionCode: code, files: preparedFiles });
               state.answers[code] = existingUrls.concat(urls);
@@ -138,44 +121,62 @@ html = html.replace(
             }`
 );
 
-html = html.replace(
-  `state.searchTimers[code] = setTimeout(() => {
-        google.script.run
-          .withSuccessHandler((items) => renderSuggestions(field, items))
-          .withFailureHandler(showError)
-          .searchReference(type, query);
-      }, 220);`,
-  `state.searchTimers[code] = setTimeout(async () => {
+html = replaceRange(
+  html,
+  'function queueReferenceSearch(field, query) {',
+  'function searchLocalReferences(type, query) {',
+  `function queueReferenceSearch(field, query) {
+      const code = field.dataset.code;
+      const type = field.dataset.reference;
+      const box = field.querySelector('.suggestions');
+
+      clearTimeout(state.searchTimers[code]);
+      if (query.length < 2) {
+        box.classList.remove('open');
+        box.innerHTML = '';
+        return;
+      }
+
+      state.searchTimers[code] = setTimeout(async () => {
+        const localItems = searchLocalReferences(type, query);
+        if (localItems) {
+          renderSuggestions(field, localItems);
+          return;
+        }
+
         try {
           const items = await apiCall('searchReference', { type, query });
           renderSuggestions(field, items);
         } catch (error) {
           showError(error);
         }
-      }, 220);`
+      }, 120);
+    }
+
+    `
+);
+
+html = replaceRange(
+  html,
+  'function refreshReferences() {',
+  'function loadStoredReferences() {',
+  `async function refreshReferences() {
+      try {
+        const references = await apiCall('getReferences');
+        state.references = references || {};
+        saveStoredReferences(state.references);
+      } catch (error) {}
+    }
+
+    `
 );
 
 html = html.replace('function submit() {', 'async function submit() {');
 
-html = html.replace(
-  `google.script.run
-        .withSuccessHandler((result) => {
-          els.app.style.display = 'none';
-          els.done.innerHTML = \`
-            <div>Ответ сохранен. ID анкеты: \${escapeHtml(result.surveyId)}</div>
-            <button type="button" id="newSurveyDoneBtn">Заполнить новый опросник</button>
-          \`;
-          els.done.style.display = 'block';
-          els.status.textContent = 'Готово';
-          resetDraftState();
-          document.querySelector('#newSurveyDoneBtn').addEventListener('click', startNewSurvey);
-        })
-        .withFailureHandler((error) => {
-          els.nextBtn.disabled = false;
-          els.nextBtn.textContent = 'Отправить';
-          showError(error);
-        })
-        .submitSurvey({ meta, answers });`,
+html = replaceUntilAfter(
+  html,
+  'google.script.run\n        .withSuccessHandler((result)',
+  '        .submitSurvey({ meta, answers });',
   `try {
         const result = await apiCall('submitSurvey', { payload: { meta, answers } });
         els.app.style.display = 'none';

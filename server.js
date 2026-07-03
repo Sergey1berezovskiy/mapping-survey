@@ -11,7 +11,9 @@ const port = process.env.PORT || 3000;
 const scriptUrl = process.env.APPS_SCRIPT_URL;
 const jsonLimitBytes = Number(process.env.JSON_LIMIT_BYTES || 50 * 1024 * 1024);
 const upstreamTimeoutMs = Number(process.env.UPSTREAM_TIMEOUT_MS || 25000);
-const serviceVersion = 'railway-survey-2026-07-03-1735';
+const serviceVersion = 'railway-survey-2026-07-03-1745';
+const cacheTtlMs = Number(process.env.API_CACHE_TTL_MS || 5 * 60 * 1000);
+const apiCache = new Map();
 
 const mimeByExt = {
   '.html': 'text/html; charset=utf-8',
@@ -77,7 +79,11 @@ async function handleApi(req, res, action) {
   }
 
   const params = await readJsonBody(req);
-  const payload = await callAppsScript(action, params);
+  if (action === 'clearConfigCache') {
+    apiCache.clear();
+  }
+
+  const payload = await callAppsScriptCached(action, params);
   sendJson(res, 200, { ok: true, result: payload.result });
 }
 
@@ -105,6 +111,23 @@ async function handleAppsScriptDebug(res) {
       error: error && error.message ? error.message : String(error),
     });
   }
+}
+
+async function callAppsScriptCached(action, params) {
+  const cacheableActions = new Set(['getFormConfig', 'getReferences']);
+  if (!cacheableActions.has(action)) {
+    return callAppsScript(action, params);
+  }
+
+  const key = `${action}:${JSON.stringify(params || {})}`;
+  const cached = apiCache.get(key);
+  if (cached && Date.now() - cached.savedAt < cacheTtlMs) {
+    return cached.payload;
+  }
+
+  const payload = await callAppsScript(action, params);
+  apiCache.set(key, { savedAt: Date.now(), payload });
+  return payload;
 }
 
 async function callAppsScript(action, params) {
