@@ -1481,7 +1481,7 @@
 
         document.querySelectorAll(`.section[data-section-code="brand_zones"] .field[data-group="${cssEscape(brand)}"]`)
           .forEach((field) => {
-            const shouldHide = absent && field !== categoryField;
+            const shouldHide = absent && field !== categoryField && !isBrandDisplayField(field);
             field.classList.toggle('hidden-by-answer', shouldHide);
 
             if (shouldHide) {
@@ -1489,6 +1489,10 @@
             }
           });
       });
+    }
+
+    function isBrandDisplayField(field) {
+      return String(field.dataset.code || '').startsWith('brand_display_');
     }
 
     function clearFieldAnswer(field) {

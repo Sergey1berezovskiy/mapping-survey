@@ -259,6 +259,18 @@ html = html
     '          const names = Array.isArray(state.fileNames[code]) && state.fileNames[code].length\n            ? state.fileNames[code]\n            : value.map((_, index) => `Фото ${index + 1}`);\n          renderFileStatus(fileList, `Уже загружено файлов: ${value.length}`, names);'
   )
   .replace(
+    '            const shouldHide = absent && field !== categoryField;',
+    '            const shouldHide = absent && field !== categoryField && !isBrandDisplayField(field);'
+  )
+  .replace(
+    '    function clearFieldAnswer(field) {',
+    `    function isBrandDisplayField(field) {
+      return String(field.dataset.code || '').startsWith('brand_display_');
+    }
+
+    function clearFieldAnswer(field) {`
+  )
+  .replace(
     "    async function readFileAsPayload(file) {",
     `    function renderFileStatus(fileList, title, names = [], activeIndex = -1) {
       const safeNames = names.filter(Boolean);
