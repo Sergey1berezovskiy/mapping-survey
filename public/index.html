@@ -35,10 +35,13 @@
 
     header {
       display: flex;
-      justify-content: space-between;
+      justify-content: center;
       gap: 12px;
-      align-items: flex-start;
+      align-items: center;
       padding: 10px 0 16px;
+      text-align: center;
+      max-width: 720px;
+      margin: 0 auto;
     }
 
     h1 {
@@ -66,7 +69,7 @@
     .header-actions {
       display: flex;
       flex-wrap: wrap;
-      justify-content: flex-end;
+      justify-content: center;
       gap: 8px;
     }
 
@@ -83,7 +86,9 @@
       cursor: pointer;
     }
 
-    .layout {
+    .layout,
+    .loading,
+    .done {
       display: grid;
       gap: 12px;
       max-width: 720px;
@@ -480,12 +485,11 @@
   <main class="shell">
     <header>
       <div>
-        <h1>Опрос бренд-зон</h1>
-        <p class="sub">Форма автоматически подтягивает разделы, вопросы и справочники из Google Sheets.</p>
+        <h1>Mapping</h1>
       </div>
       <div class="header-actions">
         <button class="new-survey-btn" type="button" id="newSurveyTopBtn">Новый опросник</button>
-        <div class="badge" id="status">Загрузка</div>
+        <div class="badge" id="status" hidden></div>
       </div>
     </header>
 
@@ -872,7 +876,7 @@
       }
 
       box.innerHTML = items.map((item) => `
-        <button type="button" data-id="${escapeHtml(item.id)}" data-label="${escapeHtml(item.label)}" data-extra="${escapeHtml(item.extra || '')}">
+        <button type="button" data-id="${escapeHtml(item.id)}" data-label="${escapeHtml(item.label)}" data-extra="${escapeHtml(item.extra || '')}" data-manager="${escapeHtml(item.manager || '')}">
           ${escapeHtml(item.label)}
           ${item.extra ? `<small>${escapeHtml(item.extra)}</small>` : ''}
         </button>
@@ -895,9 +899,48 @@
           selectedRef.classList.toggle('show', Boolean(button.dataset.extra));
           field.classList.remove('invalid');
           box.classList.remove('open');
+          if (field.dataset.reference === 'employees') {
+            applyEmployeeManager(button.dataset.manager || '');
+          }
           saveDraftSoon();
         });
       });
+    }
+
+    function applyEmployeeManager(managerName) {
+      const manager = String(managerName || '').trim();
+      if (!manager) return;
+
+      const field = document.querySelector('.field[data-code="manager_full_name"]');
+      if (!field) return;
+
+      const input = field.querySelector('input');
+      const selectedRef = field.querySelector('.selected-ref');
+      const managerItem = findReferenceByLabel('managers', manager) || {
+        id: manager,
+        label: manager,
+        extra: '',
+      };
+
+      input.value = managerItem.label;
+      state.answers.manager_full_name = managerItem.label;
+      state.referenceLabels.manager_full_name = {
+        id: managerItem.id,
+        label: managerItem.label,
+        extra: managerItem.extra || '',
+      };
+
+      selectedRef.textContent = managerItem.extra || '';
+      selectedRef.classList.toggle('show', Boolean(managerItem.extra));
+      field.classList.remove('invalid');
+    }
+
+    function findReferenceByLabel(type, label) {
+      const target = normalizeSearchText(label);
+      const items = state.references && Array.isArray(state.references[type])
+        ? state.references[type]
+        : [];
+      return items.find((item) => normalizeSearchText(item.label) === target) || null;
     }
 
     function showSection(index, shouldSave = true) {
