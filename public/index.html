@@ -1,0 +1,1221 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <base target="_top">
+  <style>
+    :root {
+      --bg: #f5f7f6;
+      --panel: #fff;
+      --text: #18201d;
+      --muted: #65716c;
+      --line: #dce2df;
+      --accent: #146f63;
+      --accent-soft: #e4f3ef;
+      --danger: #b53d35;
+      font-family: Arial, Helvetica, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .shell {
+      width: min(980px, 100%);
+      margin: 0 auto;
+      padding: 14px;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+      padding: 10px 0 16px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 26px;
+      line-height: 1.1;
+    }
+
+    .sub {
+      margin: 6px 0 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .badge {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--panel);
+      padding: 8px 10px;
+      color: var(--muted);
+      font-size: 13px;
+      white-space: nowrap;
+    }
+
+    .header-actions {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    .new-survey-btn {
+      min-height: 34px;
+      border: 1px solid var(--accent);
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      padding: 0 12px;
+      font: inherit;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .layout {
+      display: grid;
+      gap: 12px;
+    }
+
+    .progress,
+    .form {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+    }
+
+    .progress {
+      overflow: hidden;
+    }
+
+    .progress-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 12px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .bar {
+      height: 8px;
+      background: #eef1ef;
+    }
+
+    .bar span {
+      display: block;
+      height: 100%;
+      width: 0;
+      background: var(--accent);
+      transition: width 160ms ease;
+    }
+
+    .section {
+      display: none;
+      padding: 18px;
+    }
+
+    .section.active {
+      display: block;
+    }
+
+    h2 {
+      margin: 0 0 5px;
+      font-size: 23px;
+    }
+
+    .description {
+      margin: 0 0 18px;
+      color: var(--muted);
+      line-height: 1.45;
+    }
+
+    .field {
+      position: relative;
+      margin-bottom: 16px;
+      border: 1px solid #e5ebe8;
+      border-radius: 8px;
+      background: #fff;
+      padding: 18px;
+    }
+
+    label,
+    .label {
+      display: block;
+      margin-bottom: 14px;
+      font-weight: 700;
+      font-size: 17px;
+      line-height: 1.45;
+      letter-spacing: 0;
+    }
+
+    .required-mark {
+      color: var(--danger);
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    input,
+    textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      color: var(--text);
+      padding: 13px 12px;
+      font: inherit;
+      font-size: 16px;
+      outline: none;
+    }
+
+    textarea {
+      min-height: 98px;
+      resize: vertical;
+    }
+
+    input:focus,
+    textarea:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(20, 111, 99, 0.14);
+    }
+
+    .hint {
+      margin-top: 9px;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.35;
+    }
+
+    .error {
+      display: none;
+      margin-top: 6px;
+      color: var(--danger);
+      font-size: 13px;
+    }
+
+    .field.invalid input,
+    .field.invalid textarea {
+      border-color: var(--danger);
+    }
+
+    .field.invalid .error {
+      display: block;
+    }
+
+    .field.hidden-by-answer {
+      display: none;
+    }
+
+    .chips {
+      display: grid;
+      gap: 8px;
+    }
+
+    .chip {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      width: 100%;
+      min-height: 44px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      color: var(--text);
+      padding: 11px 12px;
+      font: inherit;
+      line-height: 1.35;
+      font-size: 16px;
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .chip-mark {
+      flex: 0 0 auto;
+      width: 18px;
+      height: 18px;
+      margin-top: 1px;
+      border: 2px solid #8b9691;
+      border-radius: 4px;
+      background: #fff;
+    }
+
+    .field[data-type="single_select"] .chip-mark {
+      border-radius: 999px;
+    }
+
+    .chip-text {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+
+    .chip.active {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-weight: 700;
+    }
+
+    .chip.active .chip-mark {
+      border-color: var(--accent);
+      background: var(--accent);
+      box-shadow: inset 0 0 0 3px #fff;
+    }
+
+    .field[data-type="multi_select"] .chip.active .chip-mark {
+      box-shadow: none;
+      position: relative;
+    }
+
+    .field[data-type="multi_select"] .chip.active .chip-mark::after {
+      content: "";
+      position: absolute;
+      left: 4px;
+      top: 1px;
+      width: 5px;
+      height: 9px;
+      border: solid #fff;
+      border-width: 0 2px 2px 0;
+      transform: rotate(45deg);
+    }
+
+    .suggestions {
+      position: absolute;
+      z-index: 20;
+      left: 0;
+      right: 0;
+      top: calc(100% - 2px);
+      display: none;
+      max-height: 260px;
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      box-shadow: 0 14px 32px rgba(21, 33, 29, 0.16);
+    }
+
+    .suggestions.open {
+      display: block;
+    }
+
+    .suggestions button {
+      width: 100%;
+      border: 0;
+      border-bottom: 1px solid #edf0ee;
+      background: transparent;
+      color: var(--text);
+      padding: 11px 12px;
+      text-align: left;
+      font: inherit;
+      cursor: pointer;
+    }
+
+    .suggestions small {
+      display: block;
+      margin-top: 3px;
+      color: var(--muted);
+    }
+
+    .selected-ref {
+      display: none;
+      margin-top: 8px;
+      border-left: 3px solid var(--accent);
+      padding: 7px 10px;
+      background: var(--accent-soft);
+      color: #0f5d53;
+      font-size: 14px;
+      line-height: 1.35;
+    }
+
+    .selected-ref.show {
+      display: block;
+    }
+
+    .file-control {
+      display: grid;
+      gap: 9px;
+    }
+
+    .file-actions {
+      display: grid;
+      gap: 8px;
+    }
+
+    .file-action {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 44px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      color: var(--text);
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .file-action.primary-file {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+      color: var(--accent);
+    }
+
+    .file-action input[type="file"] {
+      display: none;
+    }
+
+    .file-control input[type="file"] {
+      padding: 11px;
+      cursor: pointer;
+    }
+
+    .file-list {
+      display: none;
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.4;
+    }
+
+    .file-list.show {
+      display: block;
+    }
+
+    @media (min-width: 520px) {
+      .file-actions {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+
+    .actions {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      border-top: 1px solid var(--line);
+      padding: 13px 18px;
+      background: #fbfcfb;
+      border-radius: 0 0 8px 8px;
+    }
+
+    button.primary,
+    button.secondary {
+      min-height: 45px;
+      border-radius: 8px;
+      padding: 0 16px;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    button.primary {
+      border: 1px solid var(--accent);
+      background: var(--accent);
+      color: #fff;
+    }
+
+    button.secondary {
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--text);
+    }
+
+    button:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
+
+    .loading,
+    .done {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      padding: 18px;
+      line-height: 1.45;
+    }
+
+    .done {
+      display: none;
+      border-color: #b9ded5;
+      background: var(--accent-soft);
+      color: #0f5d53;
+      font-weight: 700;
+    }
+
+    .done button {
+      margin-top: 12px;
+      min-height: 42px;
+      border: 1px solid var(--accent);
+      border-radius: 8px;
+      background: var(--accent);
+      color: #fff;
+      padding: 0 14px;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    @media (min-width: 760px) {
+      .shell {
+        padding: 26px;
+      }
+
+      .layout {
+        grid-template-columns: 260px 1fr;
+        align-items: start;
+      }
+
+      .progress {
+        position: sticky;
+        top: 16px;
+      }
+
+      .section {
+        padding: 26px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div>
+        <h1>Опрос бренд-зон</h1>
+        <p class="sub">Форма автоматически подтягивает разделы, вопросы и справочники из Google Sheets.</p>
+      </div>
+      <div class="header-actions">
+        <button class="new-survey-btn" type="button" id="newSurveyTopBtn">Новый опросник</button>
+        <div class="badge" id="status">Загрузка</div>
+      </div>
+    </header>
+
+    <div class="loading" id="loading">Загружаем форму...</div>
+    <div class="done" id="done"></div>
+
+    <section class="layout" id="app" style="display:none">
+      <aside class="progress">
+        <div class="progress-row">
+          <span id="stepLabel"></span>
+          <strong id="percentLabel"></strong>
+        </div>
+        <div class="bar"><span id="bar"></span></div>
+      </aside>
+
+      <form class="form" id="form" novalidate>
+        <div id="sections"></div>
+        <div class="actions">
+          <button class="secondary" type="button" id="backBtn">Назад</button>
+          <button class="primary" type="button" id="nextBtn">Далее</button>
+        </div>
+      </form>
+    </section>
+  </main>
+
+  <script>
+    const state = {
+      config: null,
+      sectionIndex: 0,
+      answers: {},
+      referenceLabels: {},
+      searchTimers: {},
+      fileUploads: {},
+    };
+
+    const IMAGE_MAX_SIDE = 1600;
+    const IMAGE_JPEG_QUALITY = 0.78;
+    const FORM_CONFIG_CACHE_KEY = 'mappingSurvey.formConfig.v1';
+    const DRAFT_CACHE_KEY = 'mappingSurvey.draft.v1';
+    let draftSaveTimer = null;
+
+    const els = {
+      loading: document.querySelector('#loading'),
+      app: document.querySelector('#app'),
+      done: document.querySelector('#done'),
+      status: document.querySelector('#status'),
+      newSurveyTopBtn: document.querySelector('#newSurveyTopBtn'),
+      sections: document.querySelector('#sections'),
+      backBtn: document.querySelector('#backBtn'),
+      nextBtn: document.querySelector('#nextBtn'),
+      stepLabel: document.querySelector('#stepLabel'),
+      percentLabel: document.querySelector('#percentLabel'),
+      bar: document.querySelector('#bar'),
+    };
+
+    async function apiCall(action, params = {}) {
+      const response = await fetch('/api/' + encodeURIComponent(action), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || !payload || payload.ok === false) {
+        throw new Error(payload && payload.error ? payload.error : 'Ошибка запроса к серверу');
+      }
+      return payload.result;
+    }
+
+    async async function boot() {
+      loadDraft();
+
+      const cachedConfig = loadStoredConfig();
+      if (cachedConfig) {
+        state.config = cachedConfig;
+        renderForm();
+        els.loading.style.display = 'none';
+        els.app.style.display = 'grid';
+        els.status.textContent = 'Кэш';
+        showSection(state.sectionIndex || 0, false);
+      }
+
+      try {
+        const config = await apiCall('getFormConfig');
+        saveStoredConfig(config);
+        state.config = config;
+        renderForm();
+        els.loading.style.display = 'none';
+        els.app.style.display = 'grid';
+        els.status.textContent = 'Черновик';
+        showSection(state.sectionIndex || 0, false);
+      } catch (error) {
+        if (cachedConfig) {
+          els.status.textContent = 'Офлайн';
+          return;
+        }
+        showError(error);
+      }
+    }
+
+    function renderForm() {
+      const questionsBySection = groupBy(state.config.questions, 'sectionCode');
+
+      els.sections.innerHTML = state.config.sections.map((section, index) => {
+        const questions = questionsBySection[section.code] || [];
+        return `
+          <section class="section" data-section-index="${index}" data-section-code="${escapeHtml(section.code)}">
+            <h2>${escapeHtml(section.title)}</h2>
+            <p class="description">${escapeHtml(section.description || '')}</p>
+            ${questions.map(renderQuestion).join('')}
+          </section>
+        `;
+      }).join('');
+
+      attachHandlers();
+      restoreFormValues();
+    }
+
+    function renderQuestion(question) {
+      const requiredMark = question.required ? '<span class="required-mark">&nbsp;*</span>' : '';
+      const hint = question.hint ? `<div class="hint">${escapeHtml(question.hint)}</div>` : '';
+      const error = '<div class="error">Заполните это поле.</div>';
+      const effectiveType = getEffectiveQuestionType(question);
+      const groupAttr = escapeHtml(question.group || '');
+
+      if (effectiveType === 'multi_select' || effectiveType === 'single_select') {
+        const options = state.config.optionsByCode[question.optionSet] || [];
+        return `
+          <div class="field" data-code="${escapeHtml(question.code)}" data-type="${escapeHtml(effectiveType)}" data-original-type="${escapeHtml(question.type)}" data-group="${groupAttr}" data-required="${question.required}">
+            <span class="label">${escapeHtml(question.text)}${requiredMark}</span>
+            <div class="chips">
+              ${options.map((option) => `
+                <button class="chip" type="button" data-option="${escapeHtml(option)}">
+                  <span class="chip-mark" aria-hidden="true"></span>
+                  <span class="chip-text">${escapeHtml(option)}</span>
+                </button>
+              `).join('')}
+            </div>
+            ${hint}
+            ${error}
+          </div>
+        `;
+      }
+
+      if (question.type === 'long_text') {
+        return `
+          <div class="field" data-code="${escapeHtml(question.code)}" data-type="${escapeHtml(effectiveType)}" data-original-type="${escapeHtml(question.type)}" data-group="${groupAttr}" data-required="${question.required}">
+            <label>${escapeHtml(question.text)}${requiredMark}</label>
+            <textarea data-input="${escapeHtml(question.code)}"></textarea>
+            ${hint}
+            ${error}
+          </div>
+        `;
+      }
+
+      if (question.type === 'reference_autocomplete') {
+        return `
+          <div class="field" data-code="${escapeHtml(question.code)}" data-type="${escapeHtml(effectiveType)}" data-original-type="${escapeHtml(question.type)}" data-group="${groupAttr}" data-reference="${escapeHtml(question.optionSet)}" data-required="${question.required}">
+            <label>${escapeHtml(question.text)}${requiredMark}</label>
+            <input data-input="${escapeHtml(question.code)}" autocomplete="off" placeholder="Начните вводить">
+            <div class="suggestions"></div>
+            <div class="selected-ref"></div>
+            ${hint}
+            <div class="error">Выберите значение из справочника.</div>
+          </div>
+        `;
+      }
+
+      if (effectiveType === 'photo') {
+        return `
+          <div class="field" data-code="${escapeHtml(question.code)}" data-type="${escapeHtml(effectiveType)}" data-original-type="${escapeHtml(question.type)}" data-group="${groupAttr}" data-required="${question.required}">
+            <label>${escapeHtml(question.text)}${requiredMark}</label>
+            <div class="file-control">
+              <div class="file-actions">
+                <label class="file-action primary-file">
+                  Сделать фото
+                  <input data-file-input="${escapeHtml(question.code)}" type="file" accept="image/*" capture="environment" multiple>
+                </label>
+                <label class="file-action">
+                  Выбрать из галереи
+                  <input data-file-input="${escapeHtml(question.code)}" type="file" accept="image/*" multiple>
+                </label>
+              </div>
+              <div class="file-list"></div>
+            </div>
+            ${hint}
+            <div class="error">Загрузите минимум одно фото.</div>
+          </div>
+        `;
+      }
+
+      const inputType = effectiveType === 'number' ? 'number' : 'text';
+      const placeholder = effectiveType === 'url' ? 'Вставьте ссылку' : '';
+      return `
+        <div class="field" data-code="${escapeHtml(question.code)}" data-type="${escapeHtml(effectiveType)}" data-original-type="${escapeHtml(question.type)}" data-group="${groupAttr}" data-required="${question.required}">
+          <label>${escapeHtml(question.text)}${requiredMark}</label>
+          <input data-input="${escapeHtml(question.code)}" type="${inputType}" inputmode="${inputType === 'number' ? 'numeric' : 'text'}" placeholder="${placeholder}">
+          ${hint}
+          ${error}
+        </div>
+      `;
+    }
+
+    function attachHandlers() {
+      document.querySelectorAll('[data-input]').forEach((input) => {
+        input.addEventListener('input', () => {
+          const field = input.closest('.field');
+          const code = field.dataset.code;
+          state.answers[code] = input.value.trim();
+          if (field.dataset.type === 'reference_autocomplete') {
+            delete state.referenceLabels[code];
+            const selectedRef = field.querySelector('.selected-ref');
+            selectedRef.textContent = '';
+            selectedRef.classList.remove('show');
+          }
+          field.classList.remove('invalid');
+
+          if (field.dataset.type === 'reference_autocomplete') {
+            queueReferenceSearch(field, input.value.trim());
+          }
+          saveDraftSoon();
+        });
+      });
+
+      document.querySelectorAll('[data-file-input]').forEach((input) => {
+        input.addEventListener('change', async () => {
+          const field = input.closest('.field');
+          const code = field.dataset.code;
+          const fileList = field.querySelector('.file-list');
+          const files = [...input.files];
+          const existingUrls = Array.isArray(state.answers[code]) ? state.answers[code] : [];
+
+          state.fileUploads[code] = { uploading: false, uploaded: false };
+          if (!files.length) {
+            if (!existingUrls.length) {
+              fileList.textContent = '';
+              fileList.classList.remove('show');
+            }
+            return;
+          }
+
+          fileList.textContent = `Выбрано файлов: ${files.length}`;
+          fileList.classList.add('show');
+          field.classList.remove('invalid');
+
+          try {
+            state.fileUploads[code] = { uploading: true, uploaded: false };
+            fileList.textContent = `Подготавливаем фото: ${files.length}`;
+            const preparedFiles = await Promise.all(files.map(readFileAsPayload));
+            const totalSizeMb = preparedFiles.reduce((sum, file) => sum + (file.size || 0), 0) / 1024 / 1024;
+            fileList.textContent = `Загружаем ${files.length} фото, примерно ${totalSizeMb.toFixed(1)} МБ...`;
+
+            try {
+              const urls = await apiCall('uploadQuestionFiles', { questionCode: code, files: preparedFiles });
+              state.answers[code] = existingUrls.concat(urls);
+              state.fileUploads[code] = { uploading: false, uploaded: true };
+              fileList.textContent = `Загружено файлов: ${state.answers[code].length}`;
+              field.classList.remove('invalid');
+              input.value = '';
+              saveDraftSoon();
+            } catch (error) {
+              state.answers[code] = existingUrls;
+              state.fileUploads[code] = { uploading: false, uploaded: false };
+              fileList.textContent = `Ошибка загрузки: ${error && error.message ? error.message : error}`;
+              field.classList.add('invalid');
+            }
+          } catch (error) {
+            state.answers[code] = existingUrls;
+            state.fileUploads[code] = { uploading: false, uploaded: false };
+            fileList.textContent = 'Не удалось прочитать файл. Попробуйте выбрать фото еще раз.';
+            field.classList.add('invalid');
+          }
+        });
+      });
+
+      document.querySelectorAll('.chip').forEach((chip) => {
+        chip.addEventListener('click', () => {
+          const field = chip.closest('.field');
+          const code = field.dataset.code;
+          const type = field.dataset.type;
+
+          if (type === 'single_select') {
+            field.querySelectorAll('.chip').forEach((item) => item.classList.remove('active'));
+            chip.classList.add('active');
+            state.answers[code] = chip.dataset.option;
+          } else {
+            chip.classList.toggle('active');
+            enforceExclusiveBrandZoneAbsence(field, chip);
+            state.answers[code] = [...field.querySelectorAll('.chip.active')].map((item) => item.dataset.option);
+          }
+
+          field.classList.remove('invalid');
+          applyConditionalVisibility();
+          saveDraftSoon();
+        });
+      });
+
+      document.addEventListener('click', (event) => {
+        if (!event.target.closest('.field')) {
+          document.querySelectorAll('.suggestions').forEach((box) => box.classList.remove('open'));
+        }
+      });
+    }
+
+    function queueReferenceSearch(field, query) {
+      const code = field.dataset.code;
+      const type = field.dataset.reference;
+      const box = field.querySelector('.suggestions');
+
+      clearTimeout(state.searchTimers[code]);
+      if (query.length < 2) {
+        box.classList.remove('open');
+        box.innerHTML = '';
+        return;
+      }
+
+      state.searchTimers[code] = setTimeout(async () => {
+        try {
+          const items = await apiCall('searchReference', { type, query });
+          renderSuggestions(field, items);
+        } catch (error) {
+          showError(error);
+        }
+      }, 220);
+    }
+
+    function renderSuggestions(field, items) {
+      const box = field.querySelector('.suggestions');
+      if (!items.length) {
+        box.innerHTML = '<button type="button" disabled>Ничего не найдено</button>';
+        box.classList.add('open');
+        return;
+      }
+
+      box.innerHTML = items.map((item) => `
+        <button type="button" data-id="${escapeHtml(item.id)}" data-label="${escapeHtml(item.label)}" data-extra="${escapeHtml(item.extra || '')}">
+          ${escapeHtml(item.label)}
+          ${item.extra ? `<small>${escapeHtml(item.extra)}</small>` : ''}
+        </button>
+      `).join('');
+      box.classList.add('open');
+
+      box.querySelectorAll('button').forEach((button) => {
+        button.addEventListener('click', () => {
+          const code = field.dataset.code;
+          const input = field.querySelector('input');
+          input.value = button.dataset.label;
+          state.answers[code] = button.dataset.label;
+          state.referenceLabels[code] = {
+            id: button.dataset.id,
+            label: button.dataset.label,
+            extra: button.dataset.extra || '',
+          };
+          const selectedRef = field.querySelector('.selected-ref');
+          selectedRef.textContent = button.dataset.extra || '';
+          selectedRef.classList.toggle('show', Boolean(button.dataset.extra));
+          field.classList.remove('invalid');
+          box.classList.remove('open');
+          saveDraftSoon();
+        });
+      });
+    }
+
+    function showSection(index, shouldSave = true) {
+      const sections = [...document.querySelectorAll('.section')];
+      const safeIndex = Math.min(Math.max(index, 0), Math.max(sections.length - 1, 0));
+      state.sectionIndex = safeIndex;
+      sections.forEach((section, itemIndex) => section.classList.toggle('active', itemIndex === safeIndex));
+
+      const percent = Math.round(((safeIndex + 1) / sections.length) * 100);
+      els.stepLabel.textContent = `Раздел ${safeIndex + 1} из ${sections.length}`;
+      els.percentLabel.textContent = `${percent}%`;
+      els.bar.style.width = `${percent}%`;
+      els.backBtn.disabled = safeIndex === 0;
+      els.nextBtn.textContent = safeIndex === sections.length - 1 ? 'Отправить' : 'Далее';
+      if (shouldSave) saveDraftSoon();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    function validateCurrentSection() {
+      const section = document.querySelector(`.section[data-section-index="${state.sectionIndex}"]`);
+      let ok = true;
+
+      section.querySelectorAll('.field').forEach((field) => {
+        const code = field.dataset.code;
+        const required = field.dataset.required === 'true';
+        if (!required) return;
+        if (field.classList.contains('hidden-by-answer')) return;
+
+        const value = state.answers[code];
+        let invalid = Array.isArray(value) ? value.length === 0 : !String(value || '').trim();
+
+        if (!invalid && field.dataset.type === 'photo') {
+          invalid = Boolean(state.fileUploads[code] && state.fileUploads[code].uploading);
+        }
+
+        if (!invalid && field.dataset.type === 'reference_autocomplete') {
+          const selected = state.referenceLabels[code];
+          invalid = !selected || selected.label !== value;
+        }
+
+        field.classList.toggle('invalid', invalid);
+        if (invalid) ok = false;
+      });
+
+      return ok;
+    }
+
+    async function submit() {
+      if (!validateCurrentSection()) return;
+
+      els.nextBtn.disabled = true;
+      els.nextBtn.textContent = 'Отправляем...';
+      els.status.textContent = 'Отправка';
+
+      const questionsByCode = Object.fromEntries(state.config.questions.map((question) => [question.code, question]));
+      const meta = {
+        employee: state.answers.employee_full_name || '',
+        manager: state.answers.manager_full_name || '',
+        store: state.answers.store_network_address || '',
+      };
+
+      const answers = Object.entries(state.answers)
+        .filter(([code]) => questionsByCode[code])
+        .map(([code, value]) => {
+          const question = questionsByCode[code];
+          const effectiveType = getEffectiveQuestionType(question);
+          const isPhoto = effectiveType === 'photo';
+          const isMultiSelect = effectiveType === 'multi_select';
+          return {
+            questionCode: code,
+            questionText: question.text,
+            type: effectiveType,
+            value: Array.isArray(value) ? '' : value,
+            selectedOptions: isMultiSelect && Array.isArray(value) ? value : '',
+            files: isPhoto && Array.isArray(value) ? value.join('\n') : (effectiveType === 'url' ? value : ''),
+          };
+        });
+
+      try {
+        const result = await apiCall('submitSurvey', { payload: { meta, answers } });
+        els.app.style.display = 'none';
+        els.done.innerHTML = `
+          <div>Ответ сохранен. ID анкеты: ${escapeHtml(result.surveyId)}</div>
+          <button type="button" id="newSurveyDoneBtn">Заполнить новый опросник</button>
+        `;
+        els.done.style.display = 'block';
+        els.status.textContent = 'Готово';
+        resetDraftState();
+        document.querySelector('#newSurveyDoneBtn').addEventListener('click', startNewSurvey);
+      } catch (error) {
+        els.nextBtn.disabled = false;
+        els.nextBtn.textContent = 'Отправить';
+        showError(error);
+      }
+    }
+
+    els.backBtn.addEventListener('click', () => {
+      if (state.sectionIndex > 0) showSection(state.sectionIndex - 1);
+    });
+
+    els.nextBtn.addEventListener('click', () => {
+      const sections = document.querySelectorAll('.section');
+      if (state.sectionIndex < sections.length - 1) {
+        if (!validateCurrentSection()) return;
+        showSection(state.sectionIndex + 1);
+        return;
+      }
+
+      submit();
+    });
+
+    window.addEventListener('beforeunload', saveDraft);
+    els.newSurveyTopBtn.addEventListener('click', startNewSurvey);
+
+    function groupBy(items, key) {
+      return items.reduce((acc, item) => {
+        const value = item[key];
+        if (!acc[value]) acc[value] = [];
+        acc[value].push(item);
+        return acc;
+      }, {});
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('"', '&quot;')
+        .replaceAll("'", '&#039;');
+    }
+
+    async function readFileAsPayload(file) {
+      if (file.type && file.type.startsWith('image/')) {
+        return resizeImageFile(file);
+      }
+
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve({
+          name: file.name,
+          mimeType: file.type || 'application/octet-stream',
+          data: reader.result,
+          size: file.size || 0,
+        });
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(file);
+      });
+    }
+
+    function resizeImageFile(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(reader.error);
+        reader.onload = () => {
+          const image = new Image();
+          image.onerror = () => reject(new Error('Не удалось открыть изображение'));
+          image.onload = () => {
+            const scale = Math.min(1, IMAGE_MAX_SIDE / Math.max(image.width, image.height));
+            const width = Math.max(1, Math.round(image.width * scale));
+            const height = Math.max(1, Math.round(image.height * scale));
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(image, 0, 0, width, height);
+
+            const data = canvas.toDataURL('image/jpeg', IMAGE_JPEG_QUALITY);
+            const originalName = file.name.replace(/\.[^.]+$/, '');
+            const outputName = `${originalName || 'photo'}.jpg`;
+            resolve({
+              name: outputName,
+              mimeType: 'image/jpeg',
+              data,
+              size: Math.round((data.length * 3) / 4),
+            });
+          };
+          image.src = reader.result;
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    function showError(error) {
+      els.loading.style.display = 'block';
+      els.loading.textContent = `Ошибка: ${error && error.message ? error.message : error}`;
+      els.status.textContent = 'Ошибка';
+    }
+
+    function loadStoredConfig() {
+      try {
+        const raw = localStorage.getItem(FORM_CONFIG_CACHE_KEY);
+        return raw ? JSON.parse(raw).config : null;
+      } catch (error) {
+        return null;
+      }
+    }
+
+    function saveStoredConfig(config) {
+      try {
+        localStorage.setItem(FORM_CONFIG_CACHE_KEY, JSON.stringify({
+          savedAt: Date.now(),
+          config,
+        }));
+      } catch (error) {}
+    }
+
+    function loadDraft() {
+      try {
+        const raw = localStorage.getItem(DRAFT_CACHE_KEY);
+        if (!raw) return;
+        const draft = JSON.parse(raw);
+        state.answers = draft.answers || {};
+        state.referenceLabels = draft.referenceLabels || {};
+        state.sectionIndex = Number.isFinite(Number(draft.sectionIndex)) ? Number(draft.sectionIndex) : 0;
+      } catch (error) {}
+    }
+
+    function saveDraftSoon() {
+      clearTimeout(draftSaveTimer);
+      draftSaveTimer = setTimeout(saveDraft, 150);
+    }
+
+    function saveDraft() {
+      try {
+        localStorage.setItem(DRAFT_CACHE_KEY, JSON.stringify({
+          savedAt: Date.now(),
+          sectionIndex: state.sectionIndex,
+          answers: state.answers,
+          referenceLabels: state.referenceLabels,
+        }));
+        if (els.status.textContent !== 'Офлайн') els.status.textContent = 'Черновик';
+      } catch (error) {}
+    }
+
+    function clearDraft() {
+      try {
+        localStorage.removeItem(DRAFT_CACHE_KEY);
+      } catch (error) {}
+    }
+
+    function resetDraftState() {
+      clearDraft();
+      state.answers = {};
+      state.referenceLabels = {};
+      state.fileUploads = {};
+      state.sectionIndex = 0;
+    }
+
+    function startNewSurvey() {
+      resetDraftState();
+      els.done.style.display = 'none';
+      els.done.innerHTML = '';
+      if (state.config) {
+        renderForm();
+        els.app.style.display = 'grid';
+        els.loading.style.display = 'none';
+        els.status.textContent = 'Черновик';
+        showSection(0, false);
+      } else {
+        els.loading.style.display = 'block';
+        boot();
+      }
+    }
+
+    function restoreFormValues() {
+      Object.entries(state.answers).forEach(([code, value]) => {
+        const field = document.querySelector(`.field[data-code="${cssEscape(code)}"]`);
+        if (!field) return;
+
+        if (field.dataset.type === 'multi_select' && Array.isArray(value)) {
+          field.querySelectorAll('.chip').forEach((chip) => {
+            chip.classList.toggle('active', value.includes(chip.dataset.option));
+          });
+          return;
+        }
+
+        if (field.dataset.type === 'single_select') {
+          field.querySelectorAll('.chip').forEach((chip) => {
+            chip.classList.toggle('active', chip.dataset.option === value);
+          });
+          return;
+        }
+
+        if (field.dataset.type === 'photo' && Array.isArray(value) && value.length) {
+          const fileList = field.querySelector('.file-list');
+          fileList.textContent = `Уже загружено файлов: ${value.length}`;
+          fileList.classList.add('show');
+          return;
+        }
+
+        const input = field.querySelector('[data-input]');
+        if (input) input.value = value || '';
+
+        if (field.dataset.type === 'reference_autocomplete') {
+          const selected = state.referenceLabels[code];
+          const selectedRef = field.querySelector('.selected-ref');
+          if (selected && selected.extra) {
+            selectedRef.textContent = selected.extra;
+            selectedRef.classList.add('show');
+          }
+        }
+      });
+      applyConditionalVisibility();
+    }
+
+    function getEffectiveQuestionType(question) {
+      if (question.code === 'photos_bz_other_vendors') return 'photo';
+      return question.type;
+    }
+
+    function enforceExclusiveBrandZoneAbsence(field, clickedChip) {
+      if (!field.dataset.code.startsWith('bz_categories_')) return;
+      const absentOption = 'БЗ отсутствует';
+
+      if (clickedChip.dataset.option === absentOption && clickedChip.classList.contains('active')) {
+        field.querySelectorAll('.chip').forEach((chip) => {
+          chip.classList.toggle('active', chip.dataset.option === absentOption);
+        });
+        return;
+      }
+
+      if (clickedChip.dataset.option !== absentOption && clickedChip.classList.contains('active')) {
+        field.querySelectorAll('.chip').forEach((chip) => {
+          if (chip.dataset.option === absentOption) chip.classList.remove('active');
+        });
+      }
+    }
+
+    function applyConditionalVisibility() {
+      document.querySelectorAll('.field[data-code^="bz_categories_"]').forEach((categoryField) => {
+        const brand = categoryField.dataset.group;
+        const absent = [...categoryField.querySelectorAll('.chip.active')]
+          .some((chip) => chip.dataset.option === 'БЗ отсутствует');
+
+        document.querySelectorAll(`.section[data-section-code="brand_zones"] .field[data-group="${cssEscape(brand)}"]`)
+          .forEach((field) => {
+            const shouldHide = absent && field !== categoryField;
+            field.classList.toggle('hidden-by-answer', shouldHide);
+
+            if (shouldHide) {
+              clearFieldAnswer(field);
+            }
+          });
+      });
+    }
+
+    function clearFieldAnswer(field) {
+      const code = field.dataset.code;
+      delete state.answers[code];
+      field.classList.remove('invalid');
+      field.querySelectorAll('.chip').forEach((chip) => chip.classList.remove('active'));
+      const input = field.querySelector('[data-input]');
+      if (input) input.value = '';
+    }
+
+    function cssEscape(value) {
+      if (window.CSS && CSS.escape) return CSS.escape(value);
+      return String(value).replace(/"/g, '\\"');
+    }
+
+    boot();
+  </script>
+</body>
+</html>
