@@ -179,10 +179,10 @@ html = replaceUntilAfter(
   'google.script.run\n        .withSuccessHandler((result)',
   '        .submitSurvey({ meta, answers });',
   `try {
-        const result = await apiCall('submitSurvey', { payload: { meta, answers } });
+        await apiCall('submitSurvey', { payload: { meta, answers } });
         els.app.style.display = 'none';
         els.done.innerHTML = \`
-          <div>Ответ сохранен. ID анкеты: \${escapeHtml(result.surveyId)}</div>
+          <div>Ваш ответ отправлен</div>
           <button type="button" id="newSurveyDoneBtn">Заполнить новый опросник</button>
         \`;
         els.done.style.display = 'block';
@@ -229,6 +229,53 @@ html = html
   .replace(
     'grid-template-columns: 1fr 1fr;',
     'grid-template-columns: 1fr;'
+  )
+  .replace(
+    'const IMAGE_MAX_SIDE = 1600;',
+    'const IMAGE_MAX_SIDE = 1280;'
+  )
+  .replace(
+    'const IMAGE_JPEG_QUALITY = 0.78;',
+    'const IMAGE_JPEG_QUALITY = 0.72;'
+  )
+  .replace(
+    '      fileUploads: {},\n      references: {},',
+    '      fileUploads: {},\n      fileNames: {},\n      references: {},'
+  )
+  .replace(
+    '        state.sectionIndex = Number.isFinite(Number(draft.sectionIndex)) ? Number(draft.sectionIndex) : 0;',
+    '        state.fileNames = draft.fileNames || {};\n        state.sectionIndex = Number.isFinite(Number(draft.sectionIndex)) ? Number(draft.sectionIndex) : 0;'
+  )
+  .replace(
+    '          referenceLabels: state.referenceLabels,\n        }));',
+    '          referenceLabels: state.referenceLabels,\n          fileNames: state.fileNames,\n        }));'
+  )
+  .replace(
+    '      state.fileUploads = {};\n      state.sectionIndex = 0;',
+    '      state.fileUploads = {};\n      state.fileNames = {};\n      state.sectionIndex = 0;'
+  )
+  .replace(
+    '          fileList.textContent = `Уже загружено файлов: ${value.length}`;\n          fileList.classList.add(\'show\');',
+    '          const names = Array.isArray(state.fileNames[code]) && state.fileNames[code].length\n            ? state.fileNames[code]\n            : value.map((_, index) => `Фото ${index + 1}`);\n          renderFileStatus(fileList, `Уже загружено файлов: ${value.length}`, names);'
+  )
+  .replace(
+    "    async function readFileAsPayload(file) {",
+    `    function renderFileStatus(fileList, title, names = [], activeIndex = -1) {
+      const safeNames = names.filter(Boolean);
+      fileList.innerHTML = \`
+        <div>\${escapeHtml(title)}</div>
+        \${safeNames.length ? \`
+          <ul>
+            \${safeNames.map((name, index) => \`
+              <li>\${index === activeIndex ? 'Обрабатываем: ' : ''}\${escapeHtml(name)}</li>
+            \`).join('')}
+          </ul>
+        \` : ''}
+      \`;
+      fileList.classList.add('show');
+    }
+
+    async function readFileAsPayload(file) {`
   )
   .replace(
     "      const managerItem = findReferenceByLabel('managers', manager) || {\n        id: manager,\n        label: manager,\n        extra: '',\n      };",

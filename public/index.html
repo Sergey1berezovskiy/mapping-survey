@@ -429,6 +429,15 @@
       display: block;
     }
 
+    .file-list ul {
+      margin: 6px 0 0;
+      padding-left: 18px;
+    }
+
+    .file-list li {
+      margin: 2px 0;
+    }
+
     @media (min-width: 520px) {
       .file-actions {
         grid-template-columns: 1fr;
@@ -555,11 +564,12 @@
       referenceLabels: {},
       searchTimers: {},
       fileUploads: {},
+      fileNames: {},
       references: {},
     };
 
-    const IMAGE_MAX_SIDE = 1600;
-    const IMAGE_JPEG_QUALITY = 0.78;
+    const IMAGE_MAX_SIDE = 1280;
+    const IMAGE_JPEG_QUALITY = 0.72;
     const FORM_CONFIG_CACHE_KEY = 'mappingSurvey.formConfig.v1';
     const REFERENCES_CACHE_KEY = 'mappingSurvey.references.v3';
     const DRAFT_CACHE_KEY = 'mappingSurvey.draft.v1';
@@ -808,6 +818,8 @@
           const fileList = field.querySelector('.file-list');
           const files = [...input.files];
           const existingUrls = Array.isArray(state.answers[code]) ? state.answers[code] : [];
+          const existingNames = Array.isArray(state.fileNames[code]) ? state.fileNames[code] : [];
+          const selectedNames = files.map((file) => file.name || 'photo');
 
           state.fileUploads[code] = { uploading: false, uploaded: false };
           if (!files.length) {
@@ -818,33 +830,40 @@
             return;
           }
 
-          fileList.textContent = `Выбрано файлов: ${files.length}`;
           fileList.classList.add('show');
+          renderFileStatus(fileList, 'Выбрано файлов', selectedNames);
           field.classList.remove('invalid');
 
           try {
             state.fileUploads[code] = { uploading: true, uploaded: false };
-            fileList.textContent = `Подготавливаем фото: ${files.length}`;
-            const preparedFiles = await Promise.all(files.map(readFileAsPayload));
+            renderFileStatus(fileList, 'Подготавливаем фото', selectedNames);
+            const preparedFiles = [];
+            for (let index = 0; index < files.length; index += 1) {
+              renderFileStatus(fileList, `Подготавливаем фото ${index + 1} из ${files.length}`, selectedNames, index);
+              preparedFiles.push(await readFileAsPayload(files[index]));
+            }
             const totalSizeMb = preparedFiles.reduce((sum, file) => sum + (file.size || 0), 0) / 1024 / 1024;
-            fileList.textContent = `Загружаем ${files.length} фото, примерно ${totalSizeMb.toFixed(1)} МБ...`;
+            renderFileStatus(fileList, `Загружаем ${files.length} фото, примерно ${totalSizeMb.toFixed(1)} МБ`, preparedFiles.map((file) => file.name));
 
             try {
               const urls = await apiCall('uploadQuestionFiles', { questionCode: code, files: preparedFiles });
               state.answers[code] = existingUrls.concat(urls);
+              state.fileNames[code] = existingNames.concat(preparedFiles.map((file) => file.name));
               state.fileUploads[code] = { uploading: false, uploaded: true };
-              fileList.textContent = `Загружено файлов: ${state.answers[code].length}`;
+              renderFileStatus(fileList, `Загружено файлов: ${state.answers[code].length}`, state.fileNames[code]);
               field.classList.remove('invalid');
               input.value = '';
               saveDraftSoon();
             } catch (error) {
               state.answers[code] = existingUrls;
+              state.fileNames[code] = existingNames;
               state.fileUploads[code] = { uploading: false, uploaded: false };
               fileList.textContent = `Ошибка загрузки: ${error && error.message ? error.message : error}`;
               field.classList.add('invalid');
             }
           } catch (error) {
             state.answers[code] = existingUrls;
+            state.fileNames[code] = existingNames;
             state.fileUploads[code] = { uploading: false, uploaded: false };
             fileList.textContent = 'Не удалось прочитать файл. Попробуйте выбрать фото еще раз.';
             field.classList.add('invalid');
@@ -1149,10 +1168,10 @@
         });
 
       try {
-        const result = await apiCall('submitSurvey', { payload: { meta, answers } });
+        await apiCall('submitSurvey', { payload: { meta, answers } });
         els.app.style.display = 'none';
         els.done.innerHTML = `
-          <div>Ответ сохранен. ID анкеты: ${escapeHtml(result.surveyId)}</div>
+          <div>Ваш ответ отправлен</div>
           <button type="button" id="newSurveyDoneBtn">Заполнить новый опросник</button>
         `;
         els.done.style.display = 'block';
@@ -1200,6 +1219,21 @@
         .replaceAll('>', '&gt;')
         .replaceAll('"', '&quot;')
         .replaceAll("'", '&#039;');
+    }
+
+    function renderFileStatus(fileList, title, names = [], activeIndex = -1) {
+      const safeNames = names.filter(Boolean);
+      fileList.innerHTML = `
+        <div>${escapeHtml(title)}</div>
+        ${safeNames.length ? `
+          <ul>
+            ${safeNames.map((name, index) => `
+              <li>${index === activeIndex ? 'Обрабатываем: ' : ''}${escapeHtml(name)}</li>
+            `).join('')}
+          </ul>
+        ` : ''}
+      `;
+      fileList.classList.add('show');
     }
 
     async function readFileAsPayload(file) {
@@ -1310,6 +1344,7 @@
         const draft = JSON.parse(raw);
         state.answers = draft.answers || {};
         state.referenceLabels = draft.referenceLabels || {};
+        state.fileNames = draft.fileNames || {};
         state.sectionIndex = Number.isFinite(Number(draft.sectionIndex)) ? Number(draft.sectionIndex) : 0;
       } catch (error) {}
     }
@@ -1326,6 +1361,7 @@
           sectionIndex: state.sectionIndex,
           answers: state.answers,
           referenceLabels: state.referenceLabels,
+          fileNames: state.fileNames,
         }));
         if (els.status.textContent !== 'Офлайн') els.status.textContent = 'Черновик';
       } catch (error) {}
@@ -1342,6 +1378,7 @@
       state.answers = {};
       state.referenceLabels = {};
       state.fileUploads = {};
+      state.fileNames = {};
       state.sectionIndex = 0;
     }
 
@@ -1382,8 +1419,10 @@
 
         if (field.dataset.type === 'photo' && Array.isArray(value) && value.length) {
           const fileList = field.querySelector('.file-list');
-          fileList.textContent = `Уже загружено файлов: ${value.length}`;
-          fileList.classList.add('show');
+          const names = Array.isArray(state.fileNames[code]) && state.fileNames[code].length
+            ? state.fileNames[code]
+            : value.map((_, index) => `Фото ${index + 1}`);
+          renderFileStatus(fileList, `Уже загружено файлов: ${value.length}`, names);
           return;
         }
 
