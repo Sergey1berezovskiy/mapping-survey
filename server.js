@@ -1,6 +1,7 @@
 import http from 'node:http';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -9,11 +10,14 @@ const publicDir = path.join(__dirname, 'public');
 
 const port = process.env.PORT || 3000;
 const scriptUrl = process.env.APPS_SCRIPT_URL;
+const driveFolderId = process.env.GOOGLE_DRIVE_FOLDER_ID || process.env.DRIVE_FOLDER_ID || '';
+const driveServiceAccountJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON || process.env.DRIVE_SERVICE_ACCOUNT_JSON || '';
 const jsonLimitBytes = Number(process.env.JSON_LIMIT_BYTES || 200 * 1024 * 1024);
 const upstreamTimeoutMs = Number(process.env.UPSTREAM_TIMEOUT_MS || 120000);
-const serviceVersion = 'railway-survey-2026-07-03-1845';
+const serviceVersion = 'railway-survey-2026-07-06-drive-upload';
 const cacheTtlMs = Number(process.env.API_CACHE_TTL_MS || 5 * 60 * 1000);
 const apiCache = new Map();
+let driveAccessToken = null;
 
 const mimeByExt = {
   '.html': 'text/html; charset=utf-8',
@@ -41,12 +45,19 @@ const server = http.createServer(async (req, res) => {
         ok: true,
         version: serviceVersion,
         scriptUrlConfigured: Boolean(scriptUrl),
+        driveFolderConfigured: Boolean(driveFolderId),
+        driveServiceAccountConfigured: Boolean(driveServiceAccountJson),
       });
       return;
     }
 
     if (req.method === 'GET' && url.pathname === '/debug/apps-script') {
       await handleAppsScriptDebug(res);
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/debug/drive') {
+      await handleDriveDebug(res);
       return;
     }
 
@@ -70,6 +81,20 @@ const server = http.createServer(async (req, res) => {
 });
 
 async function handleApi(req, res, action) {
+  const params = await readJsonBody(req);
+
+  if (action === 'uploadQuestionFiles') {
+    const result = await uploadQuestionFilesToDrive(params);
+    sendJson(res, 200, { ok: true, result });
+    return;
+  }
+
+  if (action === 'deleteQuestionFile') {
+    const result = await deleteQuestionFileFromDrive(params);
+    sendJson(res, 200, { ok: true, result });
+    return;
+  }
+
   if (!scriptUrl) {
     sendJson(res, 500, {
       ok: false,
@@ -78,13 +103,198 @@ async function handleApi(req, res, action) {
     return;
   }
 
-  const params = await readJsonBody(req);
   if (action === 'clearConfigCache') {
     apiCache.clear();
   }
 
   const payload = await callAppsScriptCached(action, params);
   sendJson(res, 200, { ok: true, result: payload.result });
+}
+
+async function uploadQuestionFilesToDrive(params) {
+  if (!driveFolderId) {
+    throw new Error('GOOGLE_DRIVE_FOLDER_ID is not configured on Railway.');
+  }
+
+  const files = Array.isArray(params && params.files) ? params.files : [];
+  if (!files.length) return [];
+
+  const questionCode = sanitizeFileName(params.questionCode || 'photo');
+  const uploadId = crypto.randomUUID();
+  const uploaded = [];
+
+  for (let index = 0; index < files.length; index += 1) {
+    const file = files[index] || {};
+    const buffer = dataUrlToBuffer(file.data);
+    const safeName = sanitizeFileName([
+      uploadId,
+      questionCode,
+      index + 1,
+      file.name || 'photo.jpg',
+    ].join('_'));
+
+    const driveFile = await createDriveFile({
+      name: safeName,
+      mimeType: file.mimeType || 'image/jpeg',
+      buffer,
+    });
+
+    uploaded.push({
+      id: driveFile.id,
+      url: driveFile.webViewLink || `https://drive.google.com/file/d/${driveFile.id}/view`,
+      name: file.name || safeName,
+      size: buffer.length,
+    });
+  }
+
+  return uploaded;
+}
+
+async function deleteQuestionFileFromDrive(params) {
+  const fileId = String(params && params.fileId ? params.fileId : '').trim();
+  if (!fileId) throw new Error('fileId is required.');
+
+  const token = await getDriveAccessToken();
+  const response = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?supportsAllDrives=true`, {
+    method: 'DELETE',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+
+  if (!response.ok && response.status !== 404) {
+    const text = await response.text();
+    throw new Error(`Google Drive delete failed: ${response.status} ${text.slice(0, 300)}`);
+  }
+
+  return true;
+}
+
+async function createDriveFile({ name, mimeType, buffer }) {
+  const token = await getDriveAccessToken();
+  const boundary = `mapping_survey_${crypto.randomUUID()}`;
+  const metadata = JSON.stringify({
+    name,
+    parents: [driveFolderId],
+  });
+
+  const body = Buffer.concat([
+    Buffer.from(`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n`),
+    Buffer.from(`--${boundary}\r\nContent-Type: ${mimeType}\r\n\r\n`),
+    buffer,
+    Buffer.from(`\r\n--${boundary}--`),
+  ]);
+
+  const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id,name,size,webViewLink', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': `multipart/related; boundary=${boundary}`,
+      'Content-Length': String(body.length),
+    },
+    body,
+  });
+
+  const text = await response.text();
+  let payload;
+  try {
+    payload = JSON.parse(text);
+  } catch {
+    throw new Error(`Google Drive upload returned non-JSON response: ${text.slice(0, 300)}`);
+  }
+
+  if (!response.ok) {
+    throw new Error(payload.error && payload.error.message ? payload.error.message : `Google Drive upload failed: ${response.status}`);
+  }
+
+  return payload;
+}
+
+async function getDriveAccessToken() {
+  if (driveAccessToken && driveAccessToken.expiresAt > Date.now() + 60000) {
+    return driveAccessToken.token;
+  }
+
+  const account = parseServiceAccount();
+  const now = Math.floor(Date.now() / 1000);
+  const header = base64UrlJson({ alg: 'RS256', typ: 'JWT' });
+  const claim = base64UrlJson({
+    iss: account.client_email,
+    scope: 'https://www.googleapis.com/auth/drive.file',
+    aud: 'https://oauth2.googleapis.com/token',
+    exp: now + 3600,
+    iat: now,
+  });
+  const unsigned = `${header}.${claim}`;
+  const signature = crypto
+    .createSign('RSA-SHA256')
+    .update(unsigned)
+    .sign(account.private_key);
+  const assertion = `${unsigned}.${base64Url(signature)}`;
+
+  const response = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+      assertion,
+    }),
+  });
+
+  const payload = await response.json().catch(() => null);
+  if (!response.ok || !payload || !payload.access_token) {
+    throw new Error(payload && payload.error_description ? payload.error_description : 'Google Drive auth failed.');
+  }
+
+  driveAccessToken = {
+    token: payload.access_token,
+    expiresAt: Date.now() + Number(payload.expires_in || 3600) * 1000,
+  };
+  return driveAccessToken.token;
+}
+
+function parseServiceAccount() {
+  if (!driveServiceAccountJson) {
+    throw new Error('GOOGLE_SERVICE_ACCOUNT_JSON is not configured on Railway.');
+  }
+
+  try {
+    const normalized = driveServiceAccountJson.trim().startsWith('{')
+      ? driveServiceAccountJson
+      : Buffer.from(driveServiceAccountJson, 'base64').toString('utf8');
+    const account = JSON.parse(normalized);
+    if (!account.client_email || !account.private_key) {
+      throw new Error('client_email/private_key are missing.');
+    }
+    return account;
+  } catch (error) {
+    throw new Error(`Invalid GOOGLE_SERVICE_ACCOUNT_JSON: ${error.message}`);
+  }
+}
+
+function dataUrlToBuffer(data) {
+  const text = String(data || '');
+  const base64 = text.includes(',') ? text.split(',').pop() : text;
+  if (!base64) throw new Error('File data is empty.');
+  return Buffer.from(base64, 'base64');
+}
+
+function base64UrlJson(value) {
+  return base64Url(Buffer.from(JSON.stringify(value)));
+}
+
+function base64Url(value) {
+  return Buffer.from(value)
+    .toString('base64')
+    .replace(/=/g, '')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_');
+}
+
+function sanitizeFileName(name) {
+  return String(name || 'upload')
+    .replace(/[\\/:*?"<>|#%{}~&]/g, '_')
+    .slice(0, 180);
 }
 
 async function handleAppsScriptDebug(res) {
@@ -108,6 +318,32 @@ async function handleAppsScriptDebug(res) {
     sendJson(res, 500, {
       ok: false,
       scriptUrlConfigured: true,
+      error: error && error.message ? error.message : String(error),
+    });
+  }
+}
+
+async function handleDriveDebug(res) {
+  try {
+    const token = await getDriveAccessToken();
+    const response = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(driveFolderId)}?supportsAllDrives=true&fields=id,name,mimeType,webViewLink`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    const payload = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      throw new Error(payload && payload.error && payload.error.message ? payload.error.message : `Google Drive folder check failed: ${response.status}`);
+    }
+
+    sendJson(res, 200, {
+      ok: true,
+      folder: payload,
+    });
+  } catch (error) {
+    sendJson(res, 500, {
+      ok: false,
       error: error && error.message ? error.message : String(error),
     });
   }

@@ -647,6 +647,7 @@
       referenceLabels: {},
       searchTimers: {},
       fileUploads: {},
+      fileIds: {},
       fileNames: {},
       fileSizes: {},
       references: {},
@@ -905,6 +906,7 @@
           const fileList = field.querySelector('.file-list');
           const files = [...input.files];
           const existingUrls = Array.isArray(state.answers[code]) ? state.answers[code] : [];
+          const existingIds = Array.isArray(state.fileIds[code]) ? state.fileIds[code] : [];
           const existingNames = Array.isArray(state.fileNames[code]) ? state.fileNames[code] : [];
           const existingSizes = Array.isArray(state.fileSizes[code]) ? state.fileSizes[code] : [];
           const selectedNames = files.map((file) => file.name || 'photo');
@@ -951,6 +953,7 @@
             renderFileStatus(fileList, `Загружаем ${files.length} фото`, preparedFiles.map((file) => file.name), preparedFiles.map((file) => file.size || 0), -1, 'uploading');
 
             let urls = [];
+            let uploadedIds = [];
             let uploadedNames = [];
             let uploadedSizes = [];
             try {
@@ -964,12 +967,14 @@
                   start,
                   'uploading'
                 );
-                const batchUrls = await apiCall('uploadQuestionFiles', { questionCode: code, files: batch });
-                urls.push(...batchUrls);
-                uploadedNames.push(...batch.map((file) => file.name));
-                uploadedSizes.push(...batch.map((file) => file.size || 0));
+                const batchFiles = await apiCall('uploadQuestionFiles', { questionCode: code, files: batch });
+                urls.push(...batchFiles.map((file) => file.url));
+                uploadedIds.push(...batchFiles.map((file) => file.id));
+                uploadedNames.push(...batchFiles.map((file) => file.name));
+                uploadedSizes.push(...batchFiles.map((file) => file.size || 0));
               }
               state.answers[code] = existingUrls.concat(urls);
+              state.fileIds[code] = existingIds.concat(uploadedIds);
               state.fileNames[code] = existingNames.concat(uploadedNames);
               state.fileSizes[code] = existingSizes.concat(uploadedSizes);
               state.fileUploads[code] = { uploading: false, uploaded: true };
@@ -979,6 +984,7 @@
               saveDraftSoon();
             } catch (error) {
               state.answers[code] = existingUrls.concat(urls);
+              state.fileIds[code] = existingIds.concat(uploadedIds);
               state.fileNames[code] = existingNames.concat(uploadedNames);
               state.fileSizes[code] = existingSizes.concat(uploadedSizes);
               state.fileUploads[code] = { uploading: false, uploaded: false };
@@ -999,6 +1005,7 @@
             }
           } catch (error) {
             state.answers[code] = existingUrls;
+            state.fileIds[code] = existingIds;
             state.fileNames[code] = existingNames;
             state.fileSizes[code] = existingSizes;
             state.fileUploads[code] = { uploading: false, uploaded: false };
@@ -1009,7 +1016,7 @@
       });
 
       document.querySelectorAll('.file-list').forEach((fileList) => {
-        fileList.addEventListener('click', (event) => {
+        fileList.addEventListener('click', async (event) => {
           const button = event.target.closest('[data-remove-files]');
           if (!button) return;
 
@@ -1022,8 +1029,34 @@
           if (!selectedIndexes.length) return;
 
           const removeSet = new Set(selectedIndexes);
+          const ids = Array.isArray(state.fileIds[code]) ? state.fileIds[code] : [];
+          button.disabled = true;
+          button.textContent = 'Удаляем...';
+
+          try {
+            await Promise.all(selectedIndexes
+              .map((index) => ids[index])
+              .filter(Boolean)
+              .map((fileId) => apiCall('deleteQuestionFile', { fileId })));
+          } catch (error) {
+            button.disabled = false;
+            button.textContent = 'Удалить выбранные';
+            renderFileStatus(
+              fileList,
+              `Не удалось удалить фото из Google Drive: ${error && error.message ? error.message : error}`,
+              state.fileNames[code] || [],
+              state.fileSizes[code] || [],
+              -1,
+              'error',
+              true,
+              code
+            );
+            return;
+          }
+
           state.answers[code] = (Array.isArray(state.answers[code]) ? state.answers[code] : [])
             .filter((_, index) => !removeSet.has(index));
+          state.fileIds[code] = ids.filter((_, index) => !removeSet.has(index));
           state.fileNames[code] = (Array.isArray(state.fileNames[code]) ? state.fileNames[code] : [])
             .filter((_, index) => !removeSet.has(index));
           state.fileSizes[code] = (Array.isArray(state.fileSizes[code]) ? state.fileSizes[code] : [])
@@ -1538,6 +1571,7 @@
         const draft = JSON.parse(raw);
         state.answers = draft.answers || {};
         state.referenceLabels = draft.referenceLabels || {};
+        state.fileIds = draft.fileIds || {};
         state.fileNames = draft.fileNames || {};
         state.fileSizes = draft.fileSizes || {};
         state.sectionIndex = Number.isFinite(Number(draft.sectionIndex)) ? Number(draft.sectionIndex) : 0;
@@ -1556,6 +1590,7 @@
           sectionIndex: state.sectionIndex,
           answers: state.answers,
           referenceLabels: state.referenceLabels,
+          fileIds: state.fileIds,
           fileNames: state.fileNames,
           fileSizes: state.fileSizes,
         }));
@@ -1574,6 +1609,7 @@
       state.answers = {};
       state.referenceLabels = {};
       state.fileUploads = {};
+      state.fileIds = {};
       state.fileNames = {};
       state.fileSizes = {};
       state.sectionIndex = 0;
