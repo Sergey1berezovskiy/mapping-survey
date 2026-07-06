@@ -150,6 +150,10 @@
       position: relative;
     }
 
+    .capa-summary-anchor {
+      display: block;
+    }
+
     h2 {
       margin: 0 0 5px;
       font-size: 23px;
@@ -342,27 +346,33 @@
     }
 
     @media (max-width: 640px) {
-      .section.average-sales-section.active {
-        padding-top: 128px;
-      }
-
       .capa-summary {
-        position: fixed;
-        top: 52px;
-        left: 8px;
-        right: 8px;
-        width: auto;
+        position: static;
+        width: 100%;
         max-width: 560px;
         z-index: 15;
         padding: 5px 6px;
-        margin: 0 auto;
-        border-top-left-radius: 0;
-        border-top-right-radius: 0;
+        margin: 0 auto 12px;
         font-size: 8.5px;
         line-height: 1.05;
         box-shadow: 0 6px 14px rgba(89, 43, 9, 0.12);
         transform: translateZ(0);
         will-change: transform;
+      }
+
+      .capa-summary-anchor.capa-fixed {
+        min-height: var(--capa-fixed-height, 0px);
+      }
+
+      .capa-summary.is-fixed {
+        position: fixed;
+        top: 0;
+        left: 8px;
+        right: 8px;
+        width: auto;
+        margin: 0 auto;
+        border-top-left-radius: 0;
+        border-top-right-radius: 0;
       }
 
       .capa-summary-table-wrap {
@@ -959,11 +969,14 @@
         const title = getSectionTitle(section);
         const description = getSectionDescription(section);
         const sectionClass = isAverageSalesSection(section) ? 'section average-sales-section' : 'section';
+        const capaSummary = isAverageSalesSection(section)
+          ? '<div class="capa-summary-anchor" data-capa-anchor><div class="capa-summary" data-capa-summary></div></div>'
+          : '';
         return `
           <section class="${sectionClass}" data-section-index="${index}" data-section-code="${escapeHtml(section.code)}">
+            ${capaSummary}
             <h2>${escapeHtml(title)}</h2>
             ${description ? `<p class="description">${escapeHtml(description)}</p>` : ''}
-            ${isAverageSalesSection(section) ? '<div class="capa-summary" data-capa-summary></div>' : ''}
             ${questions.map(renderQuestion).join('')}
           </section>
         `;
@@ -1652,6 +1665,7 @@
       updateCompletionStates();
       if (shouldSave) saveDraftSoon();
       window.scrollTo({ top: 0, behavior: 'smooth' });
+      requestAnimationFrame(updateCapaPinning);
     }
 
     function validateCurrentSection() {
@@ -2071,6 +2085,8 @@
     });
 
     window.addEventListener('beforeunload', saveDraft);
+    window.addEventListener('scroll', updateCapaPinning, { passive: true });
+    window.addEventListener('resize', updateCapaPinning);
     els.newSurveyTopBtn.addEventListener('click', startNewSurvey);
 
     function groupBy(items, key) {
@@ -2616,6 +2632,33 @@
           </div>
         `;
       });
+      updateCapaPinning();
+    }
+
+    function updateCapaPinning() {
+      const anchor = document.querySelector('.section.active [data-capa-anchor]');
+      if (!anchor) return;
+
+      const summary = anchor.querySelector('[data-capa-summary]');
+      if (!summary || !summary.classList.contains('show')) return;
+
+      if (!window.matchMedia('(max-width: 640px)').matches) {
+        anchor.classList.remove('capa-fixed');
+        summary.classList.remove('is-fixed');
+        anchor.style.removeProperty('--capa-fixed-height');
+        return;
+      }
+
+      if (!summary.classList.contains('is-fixed')) {
+        anchor.dataset.capaTop = String(anchor.getBoundingClientRect().top + window.scrollY);
+      }
+
+      const fixedHeight = Math.ceil(summary.offsetHeight);
+      anchor.style.setProperty('--capa-fixed-height', `${fixedHeight}px`);
+
+      const shouldFix = window.scrollY >= Number(anchor.dataset.capaTop || 0);
+      anchor.classList.toggle('capa-fixed', shouldFix);
+      summary.classList.toggle('is-fixed', shouldFix);
     }
 
     function getCapaSummaryMatrix() {
