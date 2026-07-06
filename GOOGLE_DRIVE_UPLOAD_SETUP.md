@@ -1,6 +1,6 @@
-# Google Drive direct photo upload
+# Google Drive direct photo upload and direct Sheets submit
 
-Railway uploads survey photos directly to Google Drive API. Apps Script is still used for form config, references, and writing the final response to Google Sheets.
+Railway uploads survey photos directly to Google Drive API. Apps Script is still used for form config and references. The final response can be written directly from Railway to Google Sheets API, which is faster than sending it through Apps Script.
 
 ## Recommended for personal Google Drive
 
@@ -29,10 +29,13 @@ Add or keep:
 
 ```text
 APPS_SCRIPT_URL=...
+GOOGLE_SHEETS_URL=...
 GOOGLE_DRIVE_FOLDER_ID=...
 GOOGLE_OAUTH_CLIENT_ID=...
 GOOGLE_OAUTH_CLIENT_SECRET=...
 ```
+
+`GOOGLE_SHEETS_URL` can be the full Google Sheets link. You can also use `GOOGLE_SHEETS_SPREADSHEET_ID` and paste only the spreadsheet id.
 
 `GOOGLE_DRIVE_FOLDER_ID` is the folder id from the Drive URL:
 
@@ -47,6 +50,8 @@ https://mappingsurvey.up.railway.app/debug/oauth/start
 ```
 
 Approve access with the Google account that owns the Drive folder. The callback page will show a refresh token.
+
+Important: the OAuth flow now requests both Drive and Sheets access. If you previously created `GOOGLE_OAUTH_REFRESH_TOKEN` before direct Sheets submit was added, open `/debug/oauth/start` again and replace the refresh token in Railway.
 
 Add it to Railway:
 
@@ -68,6 +73,7 @@ Expected:
 
 ```json
 {
+  "spreadsheetConfigured": true,
   "driveFolderConfigured": true,
   "googleOauthClientConfigured": true,
   "googleOauthRefreshTokenConfigured": true,
@@ -89,6 +95,26 @@ Expected:
   "folder": {
     "id": "...",
     "name": "..."
+  }
+}
+```
+
+Then open:
+
+```text
+https://mappingsurvey.up.railway.app/debug/sheets
+```
+
+Expected:
+
+```json
+{
+  "ok": true,
+  "spreadsheet": {
+    "spreadsheetId": "...",
+    "properties": {
+      "title": "..."
+    }
   }
 }
 ```
