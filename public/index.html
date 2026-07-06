@@ -1559,14 +1559,11 @@
               file.name || `photo_${photoNumber}.heic`
             );
           } catch (retryError) {
-            if ((file.size || 0) <= TARGET_IMAGE_BYTES) {
-              return readOriginalImagePayload(
-                file,
-                buildPhotoFileName(storePrefix, photoNumber, getImageExtension(file), questionCode),
-                file.name || `photo_${photoNumber}.heic`
-              );
-            }
-            throw new Error('Не удалось сжать HEIC. Попробуйте выбрать меньше HEIC за раз или пересохранить фото как JPG.');
+            return readOriginalImagePayload(
+              file,
+              buildPhotoFileName(storePrefix, photoNumber, getImageExtension(file), questionCode),
+              file.name || `photo_${photoNumber}.heic`
+            );
           }
         }
       }
