@@ -854,7 +854,7 @@
               <div class="file-actions">
                 <label class="file-action primary-file">
                   Сделать/Загрузить Фото
-                  <input data-file-input="${escapeHtml(question.code)}" type="file" accept="image/*" multiple>
+                  <input data-file-input="${escapeHtml(question.code)}" type="file" accept="image/*,.heic,.heif" multiple>
                 </label>
               </div>
               <div class="file-list"></div>
@@ -1486,7 +1486,29 @@
         throw new Error('Можно загружать только фото.');
       }
 
+      if (isHeicFile(file)) {
+        return readOriginalImagePayload(file, storePrefix, photoNumber);
+      }
+
       return resizeImageFile(file, storePrefix, photoNumber);
+    }
+
+    function readOriginalImagePayload(file, storePrefix, photoNumber) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(reader.error);
+        reader.onload = () => {
+          const mimeType = getImageMimeType(file);
+          const base64 = String(reader.result || '').split(',').pop() || '';
+          resolve({
+            name: buildPhotoFileName(storePrefix, photoNumber, getImageExtension(file)),
+            mimeType,
+            data: `data:${mimeType};base64,${base64}`,
+            size: file.size || dataUrlSize(reader.result),
+          });
+        };
+        reader.readAsDataURL(file);
+      });
     }
 
     function resizeImageFile(file, storePrefix, photoNumber) {
@@ -1498,7 +1520,7 @@
           image.onerror = () => reject(new Error('Не удалось открыть изображение'));
           image.onload = () => {
             const output = compressImageToTarget(image);
-            const outputName = `${sanitizeClientFileName(storePrefix || 'Mapping')}_Фото${photoNumber}.jpg`;
+            const outputName = buildPhotoFileName(storePrefix, photoNumber, 'jpg');
             resolve({
               name: outputName,
               mimeType: 'image/jpeg',
@@ -1551,6 +1573,32 @@
       if (type.startsWith('image/')) return true;
       const name = String(file && file.name ? file.name : '').toLowerCase();
       return /\.(jpe?g|png|webp|gif|bmp|heic|heif)$/i.test(name);
+    }
+
+    function isHeicFile(file) {
+      const type = String(file && file.type ? file.type : '').toLowerCase();
+      const name = String(file && file.name ? file.name : '').toLowerCase();
+      return type.includes('heic') || type.includes('heif') || /\.(heic|heif)$/i.test(name);
+    }
+
+    function getImageMimeType(file) {
+      const type = String(file && file.type ? file.type : '').toLowerCase();
+      if (type.startsWith('image/')) return type;
+      return getImageExtension(file) === 'heif' ? 'image/heif' : 'image/heic';
+    }
+
+    function getImageExtension(file) {
+      const name = String(file && file.name ? file.name : '').toLowerCase();
+      const match = name.match(/\.([a-z0-9]+)$/i);
+      const extension = match ? match[1] : 'jpg';
+      if (extension === 'jpeg') return 'jpg';
+      if (extension === 'heif') return 'heif';
+      if (extension === 'heic') return 'heic';
+      return 'jpg';
+    }
+
+    function buildPhotoFileName(storePrefix, photoNumber, extension) {
+      return `${sanitizeClientFileName(storePrefix || 'Mapping')}_Фото${photoNumber}.${extension || 'jpg'}`;
     }
 
     function getSelectedStoreFilePrefix() {
