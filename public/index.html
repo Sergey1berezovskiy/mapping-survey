@@ -965,7 +965,7 @@
             const storePrefix = getSelectedStoreFilePrefix();
             const preparedFiles = await Promise.all(files.map(async (file, index) => {
               renderFileStatus(fileList, `Подготавливаем фото: ${preparedCount + 1} из ${files.length}`, selectedNames, files.map((item) => item.size || 0), index, 'uploading');
-              const prepared = await readFileAsPayload(file, storePrefix, existingNames.length + index + 1);
+              const prepared = await readFileAsPayload(file, storePrefix, existingNames.length + index + 1, code);
               preparedCount += 1;
               renderFileStatus(fileList, `Подготовлено фото: ${preparedCount} из ${files.length}`, selectedNames, files.map((item) => item.size || 0), index, 'uploading');
               return prepared;
@@ -1483,7 +1483,7 @@
       return `${Math.max(1, Math.round(value / 1024))} КБ`;
     }
 
-    async function readFileAsPayload(file, storePrefix, photoNumber) {
+    async function readFileAsPayload(file, storePrefix, photoNumber, questionCode) {
       if (!isImageFile(file)) {
         throw new Error('Можно загружать только фото.');
       }
@@ -1492,18 +1492,18 @@
         const converted = await convertHeicToJpegBlob(file);
         return resizeImageBlob(
           converted,
-          buildPhotoFileName(storePrefix, photoNumber, 'jpg'),
+          buildPhotoFileName(storePrefix, photoNumber, 'jpg', questionCode),
           file.name || `photo_${photoNumber}.heic`
         );
       }
 
-      return resizeImageFile(file, storePrefix, photoNumber);
+      return resizeImageFile(file, storePrefix, photoNumber, questionCode);
     }
 
-    function resizeImageFile(file, storePrefix, photoNumber) {
+    function resizeImageFile(file, storePrefix, photoNumber, questionCode) {
       return resizeImageBlob(
         file,
-        buildPhotoFileName(storePrefix, photoNumber, 'jpg'),
+        buildPhotoFileName(storePrefix, photoNumber, 'jpg', questionCode),
         file.name || `photo_${photoNumber}.jpg`
       );
     }
@@ -1620,8 +1620,16 @@
       return 'jpg';
     }
 
-    function buildPhotoFileName(storePrefix, photoNumber, extension) {
-      return `${sanitizeClientFileName(storePrefix || 'Mapping')}_Фото${photoNumber}.${extension || 'jpg'}`;
+    function buildPhotoFileName(storePrefix, photoNumber, extension, questionCode) {
+      const blockName = getPhotoBlockName(questionCode);
+      return `${sanitizeClientFileName(storePrefix || 'Mapping')}_${blockName}_Фото${photoNumber}.${extension || 'jpg'}`;
+    }
+
+    function getPhotoBlockName(questionCode) {
+      const code = String(questionCode || '').toLowerCase();
+      if (code === 'photos_bz_xiaomi' || code.includes('xiaomi')) return 'Xiaomi';
+      if (code === 'photos_bz_other_vendors' || code.includes('other') || code.includes('vendor')) return 'Конкуренты';
+      return 'Фото';
     }
 
     function getSelectedStoreFilePrefix() {
