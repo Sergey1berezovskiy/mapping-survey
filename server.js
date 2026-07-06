@@ -17,7 +17,7 @@ const googleOauthClientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET || '';
 const googleOauthRefreshToken = process.env.GOOGLE_OAUTH_REFRESH_TOKEN || '';
 const jsonLimitBytes = Number(process.env.JSON_LIMIT_BYTES || 200 * 1024 * 1024);
 const upstreamTimeoutMs = Number(process.env.UPSTREAM_TIMEOUT_MS || 120000);
-const serviceVersion = 'railway-survey-2026-07-06-drive-oauth-upload';
+const serviceVersion = 'railway-survey-2026-07-06-photo-names-compression';
 const cacheTtlMs = Number(process.env.API_CACHE_TTL_MS || 5 * 60 * 1000);
 const apiCache = new Map();
 let driveAccessToken = null;
@@ -135,23 +135,20 @@ async function uploadQuestionFilesToDrive(params) {
   const files = Array.isArray(params && params.files) ? params.files : [];
   if (!files.length) return [];
 
-  const questionCode = sanitizeFileName(params.questionCode || 'photo');
-  const uploadId = crypto.randomUUID();
   const uploaded = [];
 
   for (let index = 0; index < files.length; index += 1) {
     const file = files[index] || {};
+    if (!isAllowedImageUpload(file)) {
+      throw new Error('Only image files can be uploaded.');
+    }
+
     const buffer = dataUrlToBuffer(file.data);
-    const safeName = sanitizeFileName([
-      uploadId,
-      questionCode,
-      index + 1,
-      file.name || 'photo.jpg',
-    ].join('_'));
+    const safeName = sanitizeFileName(file.name || `photo_${index + 1}.jpg`);
 
     const driveFile = await createDriveFile({
       name: safeName,
-      mimeType: file.mimeType || 'image/jpeg',
+      mimeType: normalizeImageMimeType(file.mimeType),
       buffer,
     });
 
@@ -419,6 +416,21 @@ function dataUrlToBuffer(data) {
   const base64 = text.includes(',') ? text.split(',').pop() : text;
   if (!base64) throw new Error('File data is empty.');
   return Buffer.from(base64, 'base64');
+}
+
+function isAllowedImageUpload(file) {
+  const mimeType = String(file && file.mimeType ? file.mimeType : '').toLowerCase();
+  const data = String(file && file.data ? file.data : '').toLowerCase();
+  const name = String(file && file.name ? file.name : '').toLowerCase();
+
+  return mimeType.startsWith('image/')
+    && data.startsWith('data:image/')
+    && /\.(jpe?g|png|webp|gif|bmp|heic|heif)$/i.test(name);
+}
+
+function normalizeImageMimeType(mimeType) {
+  const normalized = String(mimeType || '').toLowerCase();
+  return normalized.startsWith('image/') ? normalized : 'image/jpeg';
 }
 
 function base64UrlJson(value) {

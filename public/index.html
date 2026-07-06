@@ -653,8 +653,10 @@
       references: {},
     };
 
-    const IMAGE_MAX_SIDE = 720;
-    const IMAGE_JPEG_QUALITY = 0.58;
+    const IMAGE_MAX_SIDE = 1280;
+    const IMAGE_MIN_SIDE = 320;
+    const IMAGE_JPEG_QUALITY = 0.72;
+    const TARGET_IMAGE_BYTES = 500 * 1024;
     const PHOTO_UPLOAD_BATCH_SIZE = 1;
     const MAX_SOURCE_FILE_BYTES = 10 * 1024 * 1024;
     const FORM_CONFIG_CACHE_KEY = 'mappingSurvey.formConfig.v1';
@@ -920,6 +922,21 @@
             return;
           }
 
+          const nonImages = files.filter((file) => !isImageFile(file));
+          if (nonImages.length) {
+            renderFileStatus(
+              fileList,
+              'Можно загружать только фото. Удалите остальные файлы и выберите фото еще раз.',
+              nonImages.map((file) => file.name || 'file'),
+              nonImages.map((file) => file.size || 0),
+              -1,
+              'error'
+            );
+            field.classList.add('invalid');
+            input.value = '';
+            return;
+          }
+
           const oversized = files.filter((file) => file.size > MAX_SOURCE_FILE_BYTES);
           if (oversized.length) {
             renderFileStatus(
@@ -943,9 +960,10 @@
             state.fileUploads[code] = { uploading: true, uploaded: false };
             renderFileStatus(fileList, 'Подготавливаем фото', selectedNames, files.map((file) => file.size || 0), -1, 'uploading');
             let preparedCount = 0;
+            const storePrefix = getSelectedStoreFilePrefix();
             const preparedFiles = await Promise.all(files.map(async (file, index) => {
               renderFileStatus(fileList, `Подготавливаем фото: ${preparedCount + 1} из ${files.length}`, selectedNames, files.map((item) => item.size || 0), index, 'uploading');
-              const prepared = await readFileAsPayload(file);
+              const prepared = await readFileAsPayload(file, storePrefix, existingNames.length + index + 1);
               preparedCount += 1;
               renderFileStatus(fileList, `Подготовлено фото: ${preparedCount} из ${files.length}`, selectedNames, files.map((item) => item.size || 0), index, 'uploading');
               return prepared;
@@ -1463,25 +1481,15 @@
       return `${Math.max(1, Math.round(value / 1024))} КБ`;
     }
 
-    async function readFileAsPayload(file) {
-      if (file.type && file.type.startsWith('image/')) {
-        return resizeImageFile(file);
+    async function readFileAsPayload(file, storePrefix, photoNumber) {
+      if (!isImageFile(file)) {
+        throw new Error('Можно загружать только фото.');
       }
 
-      return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve({
-          name: file.name,
-          mimeType: file.type || 'application/octet-stream',
-          data: reader.result,
-          size: file.size || 0,
-        });
-        reader.onerror = () => reject(reader.error);
-        reader.readAsDataURL(file);
-      });
+      return resizeImageFile(file, storePrefix, photoNumber);
     }
 
-    function resizeImageFile(file) {
+    function resizeImageFile(file, storePrefix, photoNumber) {
       return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onerror = () => reject(reader.error);
@@ -1489,29 +1497,73 @@
           const image = new Image();
           image.onerror = () => reject(new Error('Не удалось открыть изображение'));
           image.onload = () => {
-            const scale = Math.min(1, IMAGE_MAX_SIDE / Math.max(image.width, image.height));
-            const width = Math.max(1, Math.round(image.width * scale));
-            const height = Math.max(1, Math.round(image.height * scale));
-            const canvas = document.createElement('canvas');
-            canvas.width = width;
-            canvas.height = height;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(image, 0, 0, width, height);
-
-            const data = canvas.toDataURL('image/jpeg', IMAGE_JPEG_QUALITY);
-            const originalName = file.name.replace(/\.[^.]+$/, '');
-            const outputName = `${originalName || 'photo'}.jpg`;
+            const output = compressImageToTarget(image);
+            const outputName = `${sanitizeClientFileName(storePrefix || 'Mapping')}_Фото${photoNumber}.jpg`;
             resolve({
               name: outputName,
               mimeType: 'image/jpeg',
-              data,
-              size: Math.round((data.length * 3) / 4),
+              data: output.data,
+              size: output.size,
             });
           };
           image.src = reader.result;
         };
         reader.readAsDataURL(file);
       });
+    }
+
+    function compressImageToTarget(image) {
+      const sourceMaxSide = Math.max(image.width, image.height);
+      let maxSide = Math.min(IMAGE_MAX_SIDE, sourceMaxSide);
+      const minSide = Math.min(IMAGE_MIN_SIDE, sourceMaxSide);
+      let best = null;
+
+      while (maxSide >= minSide) {
+        const scale = Math.min(1, maxSide / sourceMaxSide);
+        const width = Math.max(1, Math.round(image.width * scale));
+        const height = Math.max(1, Math.round(image.height * scale));
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(image, 0, 0, width, height);
+
+        for (const quality of [IMAGE_JPEG_QUALITY, 0.64, 0.56, 0.48, 0.4, 0.32]) {
+          const data = canvas.toDataURL('image/jpeg', quality);
+          const size = dataUrlSize(data);
+          best = { data, size };
+          if (size <= TARGET_IMAGE_BYTES) return best;
+        }
+
+        maxSide = Math.floor(maxSide * 0.82);
+      }
+
+      return best || { data: '', size: 0 };
+    }
+
+    function dataUrlSize(data) {
+      const base64 = String(data || '').split(',').pop() || '';
+      return Math.round((base64.length * 3) / 4);
+    }
+
+    function isImageFile(file) {
+      const type = String(file && file.type ? file.type : '').toLowerCase();
+      if (type.startsWith('image/')) return true;
+      const name = String(file && file.name ? file.name : '').toLowerCase();
+      return /\.(jpe?g|png|webp|gif|bmp|heic|heif)$/i.test(name);
+    }
+
+    function getSelectedStoreFilePrefix() {
+      const store = state.referenceLabels.store_network_address || {};
+      return store.address || store.extra || store.label || state.answers.store_network_address || 'Mapping';
+    }
+
+    function sanitizeClientFileName(value) {
+      return String(value || 'Mapping')
+        .replace(/[\\/:*?"<>|#%{}~&]+/g, '_')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 150) || 'Mapping';
     }
 
     function showError(error) {
