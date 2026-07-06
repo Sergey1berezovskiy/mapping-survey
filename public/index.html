@@ -229,6 +229,52 @@
       display: none;
     }
 
+    .capa-summary {
+      display: none;
+      border: 1px solid #b8ddd5;
+      border-radius: 8px;
+      background: #e7f5f1;
+      color: #005f54;
+      padding: 12px;
+      margin: 14px 0 16px;
+      font-size: 14px;
+      line-height: 1.35;
+    }
+
+    .capa-summary.show {
+      display: block;
+    }
+
+    .capa-summary-title {
+      font-weight: 800;
+      margin-bottom: 8px;
+    }
+
+    .capa-summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 8px;
+    }
+
+    .capa-summary-item {
+      border: 1px solid rgba(0, 95, 84, 0.16);
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.58);
+      padding: 8px 10px;
+    }
+
+    .capa-summary-label {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .capa-summary-value {
+      display: block;
+      font-weight: 800;
+      margin-top: 2px;
+    }
+
     .chips {
       display: grid;
       gap: 8px;
@@ -768,6 +814,7 @@
           <section class="section" data-section-index="${index}" data-section-code="${escapeHtml(section.code)}">
             <h2>${escapeHtml(title)}</h2>
             ${description ? `<p class="description">${escapeHtml(description)}</p>` : ''}
+            ${isAverageSalesSection(section) ? '<div class="capa-summary" data-capa-summary></div>' : ''}
             ${questions.map(renderQuestion).join('')}
           </section>
         `;
@@ -909,10 +956,13 @@
             }
           }
           field.classList.remove('invalid');
+          delete field.dataset.businessInvalid;
 
           if (field.dataset.type === 'reference_autocomplete') {
             queueReferenceSearch(field, input.value.trim());
           }
+          updateCapaSummary();
+          validateBusinessRules(true);
           saveDraftSoon();
         });
       });
@@ -1180,10 +1230,12 @@
             chip.classList.toggle('active');
             enforceExclusiveBrandZoneAbsence(field, chip);
             enforceExclusiveBrandDisplayAbsence(field, chip);
+            enforceExclusiveBaAbsence(field, chip);
             state.answers[code] = [...field.querySelectorAll('.chip.active')].map((item) => item.dataset.option);
           }
 
           field.classList.remove('invalid');
+          delete field.dataset.businessInvalid;
           applyConditionalVisibility();
           saveDraftSoon();
         });
@@ -1399,6 +1451,8 @@
       els.bar.style.width = `${percent}%`;
       els.backBtn.disabled = safeIndex === 0;
       els.nextBtn.textContent = safeIndex === sections.length - 1 ? 'Отправить' : 'Далее';
+      updateCapaSummary();
+      validateBusinessRules(false);
       if (shouldSave) saveDraftSoon();
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
@@ -1429,7 +1483,109 @@
         if (invalid) ok = false;
       });
 
+      if (!validateBusinessRules(true, section)) ok = false;
       return ok;
+    }
+
+    function validateBusinessRules(mark = false, root = document) {
+      clearBusinessValidation(root);
+      const activeRoot = root || document;
+      let ok = true;
+
+      activeRoot.querySelectorAll('.field[data-type="number"]').forEach((field) => {
+        if (field.classList.contains('hidden-by-answer')) return;
+
+        const code = field.dataset.code;
+        const question = getQuestionByCode(code);
+        if (!question) return;
+
+        const value = numberValue(state.answers[code]);
+        if (value === null) return;
+
+        const error = getSalesValidationError(question, value);
+        if (!error) return;
+
+        ok = false;
+        if (mark) {
+          setBusinessFieldError(field, error);
+        }
+      });
+
+      return ok;
+    }
+
+    function clearBusinessValidation(root = document) {
+      root.querySelectorAll('.field[data-business-invalid="true"]').forEach((field) => {
+        delete field.dataset.businessInvalid;
+        field.classList.remove('invalid');
+      });
+    }
+
+    function setBusinessFieldError(field, message) {
+      const error = field.querySelector('.error');
+      if (error) error.textContent = message;
+      field.dataset.businessInvalid = 'true';
+      field.classList.add('invalid');
+    }
+
+    function getSalesValidationError(question, value) {
+      const salesInfo = getSalesQuestionInfo(question);
+      if (!salesInfo) return '';
+
+      if (salesInfo.kind === 'price_band') {
+        const brandAverage = findBrandAverageValue(salesInfo);
+        if (brandAverage !== null && value > brandAverage) {
+          return `Значение не может быть больше средних продаж бренда (${brandAverage}).`;
+        }
+      }
+
+      if (salesInfo.kind === 'brand_average') {
+        const capa = findCapaValue(salesInfo.category);
+        if (capa !== null && value > capa) {
+          return `Средние продажи не могут быть больше CAPA магазина (${capa}).`;
+        }
+      }
+
+      return '';
+    }
+
+    function getSalesQuestionInfo(question) {
+      if (!question || !isAverageSalesSection(getSectionByCode(question.sectionCode))) return null;
+      const text = String(question.text || '');
+      if (!/средние продажи/i.test(text)) return null;
+
+      const category = detectProductCategory(text);
+      const brand = detectBrand(text);
+      if (!category || !brand) return null;
+
+      return {
+        category,
+        brand,
+        kind: /ценов/i.test(text) ? 'price_band' : 'brand_average',
+      };
+    }
+
+    function findBrandAverageValue({ category, brand }) {
+      const question = (state.config.questions || []).find((item) => {
+        const info = getSalesQuestionInfo(item);
+        return info
+          && info.kind === 'brand_average'
+          && info.category.key === category.key
+          && info.brand === brand;
+      });
+      return question ? numberValue(state.answers[question.code]) : null;
+    }
+
+    function findCapaValue(category) {
+      const question = findCapaQuestion(category);
+      return question ? numberValue(state.answers[question.code]) : null;
+    }
+
+    function findCapaQuestion(category) {
+      return (state.config.questions || []).find((question) => {
+        const section = getSectionByCode(question.sectionCode);
+        return isCapaSection(section) && detectProductCategory(question.text || '')?.key === category.key;
+      }) || null;
     }
 
     async function submit() {
@@ -1958,6 +2114,8 @@
         }
       });
       applyConditionalVisibility();
+      updateCapaSummary();
+      validateBusinessRules(false);
     }
 
     function getEffectiveQuestionType(question) {
@@ -1968,6 +2126,114 @@
       }
       if (question.code === 'photos_bz_other_vendors') return 'photo';
       return type;
+    }
+
+    function getQuestionByCode(code) {
+      return (state.config.questions || []).find((question) => question.code === code) || null;
+    }
+
+    function getSectionByCode(code) {
+      return (state.config.sections || []).find((section) => section.code === code) || null;
+    }
+
+    function isAverageSalesSection(section) {
+      const text = normalizeSearchText([section && section.code, section && section.title].filter(Boolean).join(' '));
+      return text.includes('средние') && text.includes('продаж');
+    }
+
+    function isCapaSection(section) {
+      const text = normalizeSearchText([section && section.code, section && section.title].filter(Boolean).join(' '));
+      return text.includes('capa') || text.includes('капа');
+    }
+
+    function updateCapaSummary() {
+      document.querySelectorAll('[data-capa-summary]').forEach((summary) => {
+        const items = getCapaSummaryItems();
+        if (!items.length) {
+          summary.classList.remove('show');
+          summary.innerHTML = '';
+          return;
+        }
+
+        summary.classList.add('show');
+        summary.innerHTML = `
+          <div class="capa-summary-title">CAPA магазина для ориентира</div>
+          <div class="capa-summary-grid">
+            ${items.map((item) => `
+              <div class="capa-summary-item">
+                <span class="capa-summary-label">${escapeHtml(item.label)}</span>
+                <span class="capa-summary-value">${item.value === null ? '-' : escapeHtml(item.value)}</span>
+              </div>
+            `).join('')}
+          </div>
+        `;
+      });
+    }
+
+    function getCapaSummaryItems() {
+      return PRODUCT_CATEGORIES
+        .map((category) => {
+          const question = findCapaQuestion(category);
+          if (!question) return null;
+          const value = numberValue(state.answers[question.code]);
+          return {
+            label: category.label,
+            value: value === null ? null : String(value),
+          };
+        })
+        .filter(Boolean);
+    }
+
+    const PRODUCT_CATEGORIES = [
+      { key: 'smartphones', label: 'Смартфоны', patterns: ['смартфон'] },
+      { key: 'wearables', label: 'Носимые устройства', patterns: ['носим'] },
+      { key: 'tablets', label: 'Планшеты', patterns: ['планшет'] },
+      { key: 'tv', label: 'Телевизоры', patterns: ['телевиз', 'тв'] },
+      { key: 'vacuums', label: 'Пылесосы', patterns: ['пылесос'] },
+      { key: 'laptops', label: 'Ноутбуки', patterns: ['ноутбук'] },
+    ];
+
+    const SALES_BRANDS = ['Xiaomi', 'Samsung', 'Huawei', 'Honor', 'Tecno', 'Realme', 'Infinix'];
+
+    function detectProductCategory(value) {
+      const text = normalizeSearchText(value);
+      return PRODUCT_CATEGORIES.find((category) => category.patterns.some((pattern) => text.includes(pattern))) || null;
+    }
+
+    function detectBrand(value) {
+      const text = normalizeSearchText(value);
+      const brand = SALES_BRANDS.find((item) => text.includes(item.toLowerCase()));
+      return brand || '';
+    }
+
+    function numberValue(value) {
+      if (value === null || value === undefined || value === '') return null;
+      const parsed = Number(String(value).replace(',', '.'));
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+
+    function enforceExclusiveBaAbsence(field, clickedChip) {
+      if (!isBaVisitField(field)) return;
+      const absentOption = 'BA не посещают магазин';
+
+      if (clickedChip.dataset.option === absentOption && clickedChip.classList.contains('active')) {
+        field.querySelectorAll('.chip').forEach((chip) => {
+          chip.classList.toggle('active', chip.dataset.option === absentOption);
+        });
+        return;
+      }
+
+      if (clickedChip.dataset.option !== absentOption && clickedChip.classList.contains('active')) {
+        field.querySelectorAll('.chip').forEach((chip) => {
+          if (chip.dataset.option === absentOption) chip.classList.remove('active');
+        });
+      }
+    }
+
+    function isBaVisitField(field) {
+      const question = getQuestionByCode(field.dataset.code);
+      const text = normalizeSearchText(question ? question.text : '');
+      return text.includes('ba') && text.includes('посещ');
     }
 
     function enforceExclusiveBrandZoneAbsence(field, clickedChip) {
