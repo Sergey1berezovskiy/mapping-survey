@@ -932,12 +932,13 @@
         `;
       }
 
-      const inputType = effectiveType === 'number' ? 'number' : 'text';
+      const inputType = 'text';
+      const numberAttrs = effectiveType === 'number' ? ' inputmode="numeric" pattern="[0-9]*"' : '';
       const placeholder = effectiveType === 'url' ? 'Вставьте ссылку' : '';
       return `
         <div class="field" data-code="${escapeHtml(question.code)}" data-type="${escapeHtml(effectiveType)}" data-original-type="${escapeHtml(question.type)}" data-group="${groupAttr}" data-required="${question.required}">
           <label>${escapeHtml(question.text)}${requiredMark}</label>
-          <input data-input="${escapeHtml(question.code)}" type="${inputType}" inputmode="${inputType === 'number' ? 'numeric' : 'text'}" placeholder="${placeholder}">
+          <input data-input="${escapeHtml(question.code)}" type="${inputType}"${numberAttrs} placeholder="${placeholder}">
           ${hint}
           ${error}
         </div>
@@ -949,6 +950,9 @@
         input.addEventListener('input', () => {
           const field = input.closest('.field');
           const code = field.dataset.code;
+          if (field.dataset.type === 'number') {
+            input.value = input.value.replace(/\D/g, '');
+          }
           state.answers[code] = input.value.trim();
           if (field.dataset.type === 'reference_autocomplete') {
             delete state.referenceLabels[code];
@@ -1559,6 +1563,13 @@
       const groups = getPriceBandGroups();
 
       groups.forEach((group) => {
+        const fieldsInRoot = group.questions
+          .map((question) => root.querySelector(`.field[data-code="${cssEscape(question.code)}"]`))
+          .filter(Boolean)
+          .filter((field) => !field.classList.contains('hidden-by-answer'));
+
+        if (!fieldsInRoot.length) return;
+
         const brandAverage = findBrandAverageValue(group);
         if (brandAverage === null) return;
 
@@ -1568,9 +1579,7 @@
         ok = false;
         if (!mark) return;
 
-        group.questions.forEach((question) => {
-          const field = root.querySelector(`.field[data-code="${cssEscape(question.code)}"]`);
-          if (!field || field.classList.contains('hidden-by-answer')) return;
+        fieldsInRoot.forEach((field) => {
           setBusinessFieldError(
             field,
             `Сумма ценовых категорий (${sum}) не может быть больше средних продаж бренда (${brandAverage}).`
