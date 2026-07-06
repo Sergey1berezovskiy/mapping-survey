@@ -146,6 +146,10 @@
       display: block;
     }
 
+    .section.average-sales-section {
+      position: relative;
+    }
+
     h2 {
       margin: 0 0 5px;
       font-size: 23px;
@@ -338,13 +342,22 @@
     }
 
     @media (max-width: 640px) {
+      .section.average-sales-section.active {
+        padding-top: 156px;
+      }
+
       .capa-summary {
-        position: -webkit-sticky;
-        position: sticky;
+        position: fixed;
         top: 0;
+        left: 8px;
+        right: 8px;
+        width: auto;
+        max-width: 560px;
         z-index: 15;
         padding: 5px 6px;
-        margin: 8px 0 10px;
+        margin: 0 auto;
+        border-top-left-radius: 0;
+        border-top-right-radius: 0;
         font-size: 8.5px;
         line-height: 1.05;
         box-shadow: 0 6px 14px rgba(89, 43, 9, 0.12);
@@ -942,8 +955,9 @@
         const questions = questionsBySection[section.code] || [];
         const title = getSectionTitle(section);
         const description = getSectionDescription(section);
+        const sectionClass = isAverageSalesSection(section) ? 'section average-sales-section' : 'section';
         return `
-          <section class="section" data-section-index="${index}" data-section-code="${escapeHtml(section.code)}">
+          <section class="${sectionClass}" data-section-index="${index}" data-section-code="${escapeHtml(section.code)}">
             <h2>${escapeHtml(title)}</h2>
             ${description ? `<p class="description">${escapeHtml(description)}</p>` : ''}
             ${isAverageSalesSection(section) ? '<div class="capa-summary" data-capa-summary></div>' : ''}
