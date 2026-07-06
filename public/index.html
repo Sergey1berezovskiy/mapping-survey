@@ -250,6 +250,7 @@
 
     .capa-summary {
       display: none;
+      position: -webkit-sticky;
       position: sticky;
       top: 8px;
       z-index: 8;
@@ -338,6 +339,7 @@
 
     @media (max-width: 640px) {
       .capa-summary {
+        position: -webkit-sticky;
         position: sticky;
         top: 0;
         z-index: 15;
@@ -346,6 +348,8 @@
         font-size: 8.5px;
         line-height: 1.05;
         box-shadow: 0 6px 14px rgba(89, 43, 9, 0.12);
+        transform: translateZ(0);
+        will-change: transform;
       }
 
       .capa-summary-table-wrap {
@@ -387,15 +391,6 @@
         text-align: center;
       }
 
-      .capa-summary.keyboard-fixed {
-        position: fixed;
-        top: 0;
-        left: 8px;
-        right: 8px;
-        width: auto;
-        max-width: 560px;
-        margin: 0 auto;
-      }
     }
 
     .chips {
@@ -547,6 +542,20 @@
     .auto-field input {
       background: #fffaf6;
       color: #a94300;
+    }
+
+    .auto-value {
+      min-height: 52px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fffaf6;
+      color: #a94300;
+      font-size: 16px;
+      font-weight: 700;
+      line-height: 1.3;
+      padding: 12px 14px;
+      white-space: normal;
+      overflow-wrap: anywhere;
     }
 
     .file-control {
@@ -1024,7 +1033,7 @@
               </label>
               <label class="auto-field">
                 <span>Адрес</span>
-                <input data-store-address readonly tabindex="-1">
+                <div class="auto-value" data-store-address></div>
               </label>
             </div>
           `
@@ -1076,19 +1085,6 @@
 
     function attachHandlers() {
       document.querySelectorAll('[data-input]').forEach((input) => {
-        input.addEventListener('focus', () => {
-          setCapaKeyboardMode(input.closest('.field'));
-        });
-
-        input.addEventListener('blur', () => {
-          setTimeout(() => {
-            const activeField = document.activeElement && document.activeElement.closest
-              ? document.activeElement.closest('.field')
-              : null;
-            setCapaKeyboardMode(activeField);
-          }, 80);
-        });
-
         input.addEventListener('input', () => {
           const field = input.closest('.field');
           const code = field.dataset.code;
@@ -1410,19 +1406,6 @@
       });
     }
 
-    function setCapaKeyboardMode(field) {
-      document.querySelectorAll('[data-capa-summary]').forEach((summary) => {
-        summary.classList.remove('keyboard-fixed');
-      });
-      if (!field) return;
-
-      const section = field.closest('.section');
-      if (!section || !isAverageSalesSection(getSectionByCode(section.dataset.sectionCode))) return;
-
-      const summary = section.querySelector('[data-capa-summary].show');
-      if (summary) summary.classList.add('keyboard-fixed');
-    }
-
     function queueReferenceSearch(field, query) {
       const code = field.dataset.code;
       const type = field.dataset.reference;
@@ -1548,7 +1531,7 @@
       const address = details && details.address ? details.address : '';
 
       channelInput.value = channel;
-      addressInput.value = address;
+      addressInput.textContent = address;
       box.classList.toggle('show', Boolean(channel || address));
     }
 
