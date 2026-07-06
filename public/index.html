@@ -338,16 +338,19 @@
 
     @media (max-width: 640px) {
       .capa-summary {
-        position: static;
-        padding: 7px;
+        position: sticky;
+        top: 0;
+        z-index: 15;
+        padding: 5px 6px;
         margin: 8px 0 10px;
-        font-size: 10px;
-        line-height: 1.15;
-        box-shadow: none;
+        font-size: 9px;
+        line-height: 1.05;
+        box-shadow: 0 6px 14px rgba(89, 43, 9, 0.12);
       }
 
       .capa-summary-table-wrap {
         overflow-x: auto;
+        overflow-y: hidden;
         -webkit-overflow-scrolling: touch;
       }
 
@@ -355,29 +358,29 @@
         min-width: 0;
         width: max-content;
         max-width: none;
-        font-size: 10px;
+        font-size: 9px;
       }
 
       .capa-summary-table th,
       .capa-summary-table td {
-        padding: 4px 5px;
+        padding: 3px 4px;
         white-space: normal;
         overflow-wrap: anywhere;
-        line-height: 1.12;
+        line-height: 1.05;
       }
 
       .capa-summary-table th {
-        max-width: 72px;
+        max-width: 62px;
       }
 
       .capa-summary-table th:first-child,
       .capa-summary-table td:first-child {
-        min-width: 66px;
-        max-width: 72px;
+        min-width: 58px;
+        max-width: 64px;
       }
 
       .capa-summary-table td {
-        min-width: 54px;
+        min-width: 47px;
         text-align: center;
       }
     }
