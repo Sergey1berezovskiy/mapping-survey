@@ -231,6 +231,9 @@
 
     .capa-summary {
       display: none;
+      position: sticky;
+      top: 8px;
+      z-index: 8;
       border: 1px solid #b8ddd5;
       border-radius: 8px;
       background: #e7f5f1;
@@ -239,6 +242,7 @@
       margin: 14px 0 16px;
       font-size: 14px;
       line-height: 1.35;
+      box-shadow: 0 8px 18px rgba(24, 32, 29, 0.08);
     }
 
     .capa-summary.show {
@@ -1511,6 +1515,7 @@
         }
       });
 
+      if (!validatePriceBandSums(activeRoot, mark)) ok = false;
       return ok;
     }
 
@@ -1547,6 +1552,54 @@
       }
 
       return '';
+    }
+
+    function validatePriceBandSums(root = document, mark = false) {
+      let ok = true;
+      const groups = getPriceBandGroups();
+
+      groups.forEach((group) => {
+        const brandAverage = findBrandAverageValue(group);
+        if (brandAverage === null) return;
+
+        const sum = group.questions.reduce((total, question) => total + (numberValue(state.answers[question.code]) || 0), 0);
+        if (sum <= brandAverage) return;
+
+        ok = false;
+        if (!mark) return;
+
+        group.questions.forEach((question) => {
+          const field = root.querySelector(`.field[data-code="${cssEscape(question.code)}"]`);
+          if (!field || field.classList.contains('hidden-by-answer')) return;
+          setBusinessFieldError(
+            field,
+            `Сумма ценовых категорий (${sum}) не может быть больше средних продаж бренда (${brandAverage}).`
+          );
+        });
+      });
+
+      return ok;
+    }
+
+    function getPriceBandGroups() {
+      const groups = new Map();
+
+      (state.config.questions || []).forEach((question) => {
+        const info = getSalesQuestionInfo(question);
+        if (!info || info.kind !== 'price_band') return;
+
+        const key = `${info.category.key}__${info.brand}`;
+        if (!groups.has(key)) {
+          groups.set(key, {
+            category: info.category,
+            brand: info.brand,
+            questions: [],
+          });
+        }
+        groups.get(key).questions.push(question);
+      });
+
+      return [...groups.values()];
     }
 
     function getSalesQuestionInfo(question) {
@@ -2157,7 +2210,7 @@
 
         summary.classList.add('show');
         summary.innerHTML = `
-          <div class="capa-summary-title">CAPA магазина для ориентира</div>
+          <div class="capa-summary-title">CAPA магазина</div>
           <div class="capa-summary-grid">
             ${items.map((item) => `
               <div class="capa-summary-item">
