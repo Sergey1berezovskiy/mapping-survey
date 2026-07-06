@@ -1160,6 +1160,7 @@
             }
             if (field.dataset.reference === 'stores') {
               updateStoreDetails(field, {});
+              applyConditionalVisibility();
             }
           }
           field.classList.remove('invalid');
@@ -1534,10 +1535,11 @@
 
       box.innerHTML = items.map((item) => {
         const manager = item.manager || extractManagerFromExtra(item.extra);
+        const displayExtra = getSuggestionExtra(field.dataset.reference, item);
         return `
         <button type="button" data-id="${escapeHtml(item.id)}" data-label="${escapeHtml(item.label)}" data-extra="${escapeHtml(item.extra || '')}" data-manager="${escapeHtml(manager)}" data-channel="${escapeHtml(item.channel || '')}" data-store-channel="${escapeHtml(item.storeChannel || item.channelType || '')}" data-rms-store-code="${escapeHtml(item.rmsStoreCode || item.rms || '')}" data-address="${escapeHtml(item.address || item.extra || '')}">
           ${escapeHtml(item.label)}
-          ${item.extra ? `<small>${escapeHtml(item.extra)}</small>` : ''}
+          ${displayExtra ? `<small>${escapeHtml(displayExtra)}</small>` : ''}
         </button>
       `;
       }).join('');
@@ -1584,10 +1586,20 @@
             });
             applyConditionalVisibility();
           }
+          els.nextBtn.disabled = false;
           updateCompletionStates();
+          validateBusinessRules(false);
           saveDraftSoon();
         });
       });
+    }
+
+    function getSuggestionExtra(type, item) {
+      if (type === 'stores') {
+        if (item.channel && item.address) return `${item.channel} - ${item.address}`;
+        return item.address || item.extra || item.search || '';
+      }
+      return item.extra || '';
     }
 
     function updateStoreDetails(field, details) {
@@ -1704,6 +1716,7 @@
       els.percentLabel.textContent = `${percent}%`;
       els.bar.style.width = `${percent}%`;
       els.backBtn.disabled = safeIndex === 0;
+      els.nextBtn.disabled = false;
       els.nextBtn.textContent = safeIndex === sections.length - 1 ? 'Отправить' : 'Далее';
       updateCapaSummary();
       validateBusinessRules(false);
@@ -1743,7 +1756,18 @@
 
       if (!validateBusinessRules(true, section)) ok = false;
       updateCompletionStates(section);
+      if (!ok) scrollToFirstInvalidField(section);
       return ok;
+    }
+
+    function scrollToFirstInvalidField(root = document) {
+      const firstInvalid = root.querySelector('.field.invalid:not(.hidden-by-answer):not(.hidden-by-store)');
+      if (!firstInvalid) return;
+      firstInvalid.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      const input = firstInvalid.querySelector('input, textarea, button');
+      if (input && typeof input.focus === 'function' && !input.disabled) {
+        setTimeout(() => input.focus({ preventScroll: true }), 250);
+      }
     }
 
     function updateCompletionStates(root = document) {

@@ -25,7 +25,7 @@ const googleOauthClientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET || '';
 const googleOauthRefreshToken = process.env.GOOGLE_OAUTH_REFRESH_TOKEN || '';
 const jsonLimitBytes = Number(process.env.JSON_LIMIT_BYTES || 200 * 1024 * 1024);
 const upstreamTimeoutMs = Number(process.env.UPSTREAM_TIMEOUT_MS || 120000);
-const serviceVersion = 'railway-survey-2026-07-06-ordered-result-columns';
+const serviceVersion = 'railway-survey-2026-07-06-validation-header-fixes';
 const cacheTtlMs = Number(process.env.API_CACHE_TTL_MS || 5 * 60 * 1000);
 const apiCache = new Map();
 let driveAccessToken = null;
@@ -645,9 +645,10 @@ async function submitSurveyToSheets(payload) {
 async function appendResultRow(row) {
   await ensureResultsSheet();
 
-  const existingHeaders = await getSheetHeaders(resultsSheetName);
+  const existingHeaders = await getSheetHeaders(resultsSheetName, true);
   const desiredHeaders = mergeHeaders([], Object.keys(row));
-  const nextHeaders = await ensureHeadersInDesiredOrder(resultsSheetName, existingHeaders, desiredHeaders);
+  const hasDataRows = await hasResultDataRows(resultsSheetName);
+  const nextHeaders = await ensureHeadersInDesiredOrder(resultsSheetName, hasDataRows ? existingHeaders : [], desiredHeaders);
 
   const appendPayload = await appendSheetValues(resultsSheetName, [nextHeaders.map((header) => getCellTextValue(row[header]))]);
   const rowNumber = getAppendedRowNumber(appendPayload);
@@ -656,10 +657,10 @@ async function appendResultRow(row) {
   }
 }
 
-async function getSheetHeaders(sheetName) {
+async function getSheetHeaders(sheetName, force = false) {
   const cacheKey = getSheetHeadersCacheKey(sheetName);
   const cached = apiCache.get(cacheKey);
-  if (cached && Date.now() - cached.savedAt < cacheTtlMs) {
+  if (!force && cached && Date.now() - cached.savedAt < cacheTtlMs) {
     return cached.payload;
   }
 
@@ -682,6 +683,22 @@ async function getSheetHeaders(sheetName) {
   return headers;
 }
 
+async function hasResultDataRows(sheetName) {
+  const token = await getDriveAccessToken();
+  const response = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(quoteSheetName(sheetName) + '!A2:A2')}?majorDimension=ROWS`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw new Error(payload && payload.error && payload.error.message ? payload.error.message : `Google Sheets data row check failed: ${response.status}`);
+  }
+
+  return Boolean(payload && Array.isArray(payload.values) && payload.values.length);
+}
+
 function getSheetHeadersCacheKey(sheetName) {
   return `sheetHeaders:${sheetName}`;
 }
@@ -700,7 +717,7 @@ async function ensureResultsSheet() {
     apiCache.delete('spreadsheetStructure');
   }
 
-  const headers = await getSheetHeaders(resultsSheetName).catch(() => []);
+  const headers = await getSheetHeaders(resultsSheetName, true).catch(() => []);
   if (!headers.length) {
     await writeSheetHeaders(resultsSheetName, RESULT_BASE_HEADERS);
     apiCache.set(getSheetHeadersCacheKey(resultsSheetName), { savedAt: Date.now(), payload: RESULT_BASE_HEADERS });
