@@ -659,7 +659,10 @@
     const TARGET_IMAGE_BYTES = 500 * 1024;
     const PHOTO_UPLOAD_BATCH_SIZE = 1;
     const MAX_SOURCE_FILE_BYTES = 10 * 1024 * 1024;
-    const HEIC_CONVERTER_URL = 'https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js';
+    const HEIC_CONVERTER_URLS = [
+      'https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js',
+      'https://unpkg.com/heic2any@0.0.4/dist/heic2any.min.js',
+    ];
     const FORM_CONFIG_CACHE_KEY = 'mappingSurvey.formConfig.v1';
     const REFERENCES_CACHE_KEY = 'mappingSurvey.references.v3';
     const DRAFT_CACHE_KEY = 'mappingSurvey.draft.v1';
@@ -964,16 +967,54 @@
             let preparedCount = 0;
             const storePrefix = getSelectedStoreFilePrefix();
             const preparedFiles = [];
+            const prepareErrors = [];
             for (let index = 0; index < files.length; index += 1) {
               const file = files[index];
-              renderFileStatus(fileList, `Подготавливаем фото: ${preparedCount + 1} из ${files.length}`, selectedNames, files.map((item) => item.size || 0), index, 'uploading');
-              const prepared = await readFileAsPayload(file, storePrefix, existingNames.length + index + 1, code);
-              preparedFiles.push(prepared);
-              preparedCount += 1;
-              renderFileStatus(fileList, `Подготовлено фото: ${preparedCount} из ${files.length}`, selectedNames, files.map((item) => item.size || 0), index, 'uploading');
+              renderFileStatus(fileList, `Подготавливаем фото: ${index + 1} из ${files.length}`, selectedNames, files.map((item) => item.size || 0), index, 'uploading');
+              try {
+                const prepared = await readFileAsPayload(file, storePrefix, existingNames.length + preparedFiles.length + 1, code);
+                preparedFiles.push(prepared);
+                preparedCount += 1;
+                renderFileStatus(
+                  fileList,
+                  `Подготовлено фото: ${preparedCount} из ${files.length}`,
+                  preparedFiles.map((item) => item.name),
+                  preparedFiles.map((item) => item.size || 0),
+                  preparedFiles.length - 1,
+                  'uploading'
+                );
+              } catch (error) {
+                prepareErrors.push({
+                  name: file.name || `photo_${index + 1}`,
+                  size: file.size || 0,
+                  message: error && error.message ? error.message : String(error)
+                });
+                renderFileStatus(
+                  fileList,
+                  `Не обработано фото: ${prepareErrors.length}. Продолжаем остальные`,
+                  prepareErrors.map((item) => `${item.name} — ${item.message}`),
+                  prepareErrors.map((item) => item.size || 0),
+                  -1,
+                  'uploading'
+                );
+              }
               await waitForBrowser();
             }
-            renderFileStatus(fileList, `Загружаем ${files.length} фото`, preparedFiles.map((file) => file.name), preparedFiles.map((file) => file.size || 0), -1, 'uploading');
+            if (!preparedFiles.length) {
+              state.fileUploads[code] = { uploading: false, uploaded: false };
+              renderFileStatus(
+                fileList,
+                `Не удалось обработать фото: ${prepareErrors[0] ? prepareErrors[0].message : 'выберите другие файлы'}`,
+                prepareErrors.map((item) => item.name),
+                prepareErrors.map((item) => item.size || 0),
+                -1,
+                'error'
+              );
+              field.classList.add('invalid');
+              input.value = '';
+              return;
+            }
+            renderFileStatus(fileList, `Загружаем ${preparedFiles.length} фото`, preparedFiles.map((file) => file.name), preparedFiles.map((file) => file.size || 0), -1, 'uploading');
 
             let urls = [];
             let uploadedIds = [];
@@ -1001,7 +1042,16 @@
               state.fileNames[code] = existingNames.concat(uploadedNames);
               state.fileSizes[code] = existingSizes.concat(uploadedSizes);
               state.fileUploads[code] = { uploading: false, uploaded: true };
-              renderFileStatus(fileList, `Загружено файлов: ${state.answers[code].length}`, state.fileNames[code], state.fileSizes[code], -1, 'uploaded', true, code);
+              renderFileStatus(
+                fileList,
+                `Загружено файлов: ${state.answers[code].length}${prepareErrors.length ? `. Не обработано: ${prepareErrors.length}` : ''}`,
+                state.fileNames[code],
+                state.fileSizes[code],
+                -1,
+                'uploaded',
+                true,
+                code
+              );
               field.classList.remove('invalid');
               input.value = '';
               saveDraftSoon();
@@ -1588,16 +1638,44 @@
       if (window.heic2any) return Promise.resolve();
       if (heicConverterPromise) return heicConverterPromise;
 
-      heicConverterPromise = new Promise((resolve, reject) => {
-        const script = document.createElement('script');
-        script.src = HEIC_CONVERTER_URL;
-        script.async = true;
-        script.onload = () => window.heic2any ? resolve() : reject(new Error('HEIC converter is unavailable.'));
-        script.onerror = () => reject(new Error('Не удалось загрузить конвертер HEIC. Проверьте интернет и попробуйте еще раз.'));
-        document.head.appendChild(script);
+      heicConverterPromise = loadHeicConverterFrom(0).catch((error) => {
+        heicConverterPromise = null;
+        throw error;
       });
 
       return heicConverterPromise;
+    }
+
+    function loadHeicConverterFrom(index) {
+      return new Promise((resolve, reject) => {
+        if (window.heic2any) {
+          resolve();
+          return;
+        }
+
+        const url = HEIC_CONVERTER_URLS[index];
+        if (!url) {
+          reject(new Error('Не удалось загрузить конвертер HEIC. Проверьте интернет и попробуйте еще раз.'));
+          return;
+        }
+
+        const script = document.createElement('script');
+        script.src = url;
+        script.async = true;
+        script.onload = () => {
+          if (window.heic2any) {
+            resolve();
+          } else {
+            script.remove();
+            loadHeicConverterFrom(index + 1).then(resolve, reject);
+          }
+        };
+        script.onerror = () => {
+          script.remove();
+          loadHeicConverterFrom(index + 1).then(resolve, reject);
+        };
+        document.head.appendChild(script);
+      });
     }
 
     function compressImageToTarget(image) {
