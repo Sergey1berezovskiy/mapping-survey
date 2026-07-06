@@ -238,10 +238,10 @@
       border-radius: 8px;
       background: #e7f5f1;
       color: #005f54;
-      padding: 12px;
-      margin: 14px 0 16px;
-      font-size: 14px;
-      line-height: 1.35;
+      padding: 9px 10px;
+      margin: 10px 0 12px;
+      font-size: 12px;
+      line-height: 1.2;
       box-shadow: 0 8px 18px rgba(24, 32, 29, 0.08);
     }
 
@@ -251,7 +251,7 @@
 
     .capa-summary-title {
       font-weight: 800;
-      margin-bottom: 8px;
+      margin-bottom: 6px;
     }
 
     .capa-summary-grid {
@@ -266,18 +266,23 @@
 
     .capa-summary-table {
       width: 100%;
-      min-width: 560px;
+      min-width: 500px;
       border-collapse: separate;
       border-spacing: 0;
-      font-size: 13px;
+      font-size: 12px;
     }
 
     .capa-summary-table th,
     .capa-summary-table td {
       border-bottom: 1px solid rgba(0, 95, 84, 0.16);
-      padding: 7px 8px;
-      text-align: left;
+      padding: 5px 6px;
+      text-align: center;
       white-space: nowrap;
+    }
+
+    .capa-summary-table th:first-child,
+    .capa-summary-table td:first-child {
+      text-align: left;
     }
 
     .capa-summary-table th {
@@ -2321,6 +2326,14 @@
                     }).join('')}
                   </tr>
                 `).join('')}
+                <tr>
+                  <th>Другое</th>
+                  ${matrix.categories.map((category) => {
+                    const value = matrix.other[category.key];
+                    const over = typeof value === 'number' && value < 0;
+                    return `<td class="${over ? 'capa-summary-over' : ''}">${formatSummaryNumber(value)}</td>`;
+                  }).join('')}
+                </tr>
               </tbody>
             </table>
           </div>
@@ -2336,8 +2349,14 @@
         brand,
         values: Object.fromEntries(categories.map((category) => [category.key, findBrandAverageValue({ category, brand })])),
       }));
+      const other = Object.fromEntries(categories.map((category) => {
+        const capaValue = capa[category.key];
+        if (capaValue === null || capaValue === undefined) return [category.key, null];
+        const brandTotal = brandRows.reduce((sum, row) => sum + (Number(row.values[category.key]) || 0), 0);
+        return [category.key, capaValue - brandTotal];
+      }));
 
-      return { categories, capa, brandRows };
+      return { categories, capa, brandRows, other };
     }
 
     function getAverageSalesBrands() {
