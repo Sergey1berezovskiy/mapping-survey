@@ -25,7 +25,7 @@ const googleOauthClientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET || '';
 const googleOauthRefreshToken = process.env.GOOGLE_OAUTH_REFRESH_TOKEN || '';
 const jsonLimitBytes = Number(process.env.JSON_LIMIT_BYTES || 200 * 1024 * 1024);
 const upstreamTimeoutMs = Number(process.env.UPSTREAM_TIMEOUT_MS || 120000);
-const serviceVersion = 'railway-survey-2026-07-06-single-sheet-submit';
+const serviceVersion = 'railway-survey-2026-07-06-rich-photo-links';
 const cacheTtlMs = Number(process.env.API_CACHE_TTL_MS || 5 * 60 * 1000);
 const apiCache = new Map();
 let driveAccessToken = null;
@@ -636,7 +636,11 @@ async function appendResultRow(row) {
     apiCache.set(getSheetHeadersCacheKey(resultsSheetName), { savedAt: Date.now(), payload: nextHeaders });
   }
 
-  await appendSheetValues(resultsSheetName, [nextHeaders.map((header) => row[header] ?? '')]);
+  const appendPayload = await appendSheetValues(resultsSheetName, [nextHeaders.map((header) => getCellTextValue(row[header]))]);
+  const rowNumber = getAppendedRowNumber(appendPayload);
+  if (rowNumber) {
+    await applyRichLinksToResultRow(resultsSheetName, rowNumber, nextHeaders, row);
+  }
 }
 
 async function getSheetHeaders(sheetName) {
@@ -769,13 +773,13 @@ function getResultAnswerValue(answer) {
       const files = answer.files
         .map(normalizeSubmittedFile)
         .filter((file) => file.url);
-      return files.length ? buildHyperlinkFormula(files) : '';
+      return files.length ? buildRichLinkCell(files) : '';
     }
     const files = String(answer.files)
       .split(/\n+/)
       .map((url, index) => ({ url: url.trim(), name: `Фото ${index + 1}` }))
       .filter((file) => file.url);
-    return files.length ? buildHyperlinkFormula(files) : answer.files;
+    return files.length ? buildRichLinkCell(files) : answer.files;
   }
   if (Array.isArray(answer.selectedOptions)) {
     return answer.selectedOptions.join('; ');
@@ -793,14 +797,106 @@ function normalizeSubmittedFile(file) {
   };
 }
 
-function buildHyperlinkFormula(files) {
-  return `=${files
-    .map((file) => `HYPERLINK("${escapeFormulaString(file.url)}","${escapeFormulaString(file.name)}")`)
-    .join('&CHAR(10)&')}`;
+function buildRichLinkCell(files) {
+  const links = [];
+  let cursor = 0;
+  const text = files.map((file) => String(file.name || 'Фото')).join('\n');
+
+  for (const file of files) {
+    const label = String(file.name || 'Фото');
+    links.push({
+      startIndex: cursor,
+      endIndex: cursor + label.length,
+      url: file.url,
+    });
+    cursor += label.length + 1;
+  }
+
+  return { text, richLinks: links };
 }
 
-function escapeFormulaString(value) {
-  return String(value || '').replace(/"/g, '""');
+function getCellTextValue(value) {
+  if (value && typeof value === 'object' && Array.isArray(value.richLinks)) {
+    return value.text || '';
+  }
+  return value ?? '';
+}
+
+function getAppendedRowNumber(payload) {
+  const updatedRange = payload && payload.updates && payload.updates.updatedRange;
+  const match = String(updatedRange || '').match(/![A-Z]+(\d+)(?::[A-Z]+\d+)?$/i);
+  return match ? Number(match[1]) : null;
+}
+
+async function applyRichLinksToResultRow(sheetName, rowNumber, headers, row) {
+  const richCellRequests = [];
+  const sheetId = await getSheetIdByName(sheetName);
+
+  headers.forEach((header, columnIndex) => {
+    const value = row[header];
+    if (!value || typeof value !== 'object' || !Array.isArray(value.richLinks) || !value.richLinks.length) {
+      return;
+    }
+
+    richCellRequests.push({
+      repeatCell: {
+        range: {
+          sheetId,
+          startRowIndex: rowNumber - 1,
+          endRowIndex: rowNumber,
+          startColumnIndex: columnIndex,
+          endColumnIndex: columnIndex + 1,
+        },
+        cell: {
+          userEnteredValue: {
+            stringValue: value.text || '',
+          },
+          textFormatRuns: buildTextFormatRuns(value.text || '', value.richLinks),
+          userEnteredFormat: {
+            wrapStrategy: 'WRAP',
+          },
+        },
+        fields: 'userEnteredValue,textFormatRuns,userEnteredFormat.wrapStrategy',
+      },
+    });
+  });
+
+  if (richCellRequests.length) {
+    await batchUpdateSpreadsheet(richCellRequests);
+  }
+}
+
+async function getSheetIdByName(sheetName) {
+  const spreadsheet = await getSpreadsheetStructure();
+  const sheet = (spreadsheet.sheets || []).find((item) => item.properties && item.properties.title === sheetName);
+  if (!sheet || !sheet.properties) {
+    throw new Error(`Sheet not found: ${sheetName}`);
+  }
+  return sheet.properties.sheetId;
+}
+
+function buildTextFormatRuns(text, links) {
+  const runs = [];
+
+  for (const link of links) {
+    runs.push({
+      startIndex: link.startIndex,
+      format: {
+        foregroundColor: { red: 0.066, green: 0.333, blue: 0.8 },
+        underline: true,
+        link: { uri: link.url },
+      },
+    });
+
+    if (link.endIndex < text.length) {
+      runs.push({
+        startIndex: link.endIndex,
+        format: {},
+      });
+    }
+  }
+
+  return runs.sort((left, right) => left.startIndex - right.startIndex);
 }
 
 async function appendSheetValues(sheetName, values) {
@@ -822,6 +918,8 @@ async function appendSheetValues(sheetName, values) {
   if (!response.ok) {
     throw new Error(payload && payload.error && payload.error.message ? payload.error.message : `Google Sheets append failed: ${response.status}`);
   }
+
+  return payload;
 }
 
 function quoteSheetName(sheetName) {
