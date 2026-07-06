@@ -260,6 +260,44 @@
       gap: 8px;
     }
 
+    .capa-summary-table-wrap {
+      overflow-x: auto;
+    }
+
+    .capa-summary-table {
+      width: 100%;
+      min-width: 560px;
+      border-collapse: separate;
+      border-spacing: 0;
+      font-size: 13px;
+    }
+
+    .capa-summary-table th,
+    .capa-summary-table td {
+      border-bottom: 1px solid rgba(0, 95, 84, 0.16);
+      padding: 7px 8px;
+      text-align: left;
+      white-space: nowrap;
+    }
+
+    .capa-summary-table th {
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .capa-summary-table td {
+      font-weight: 800;
+    }
+
+    .capa-summary-table tr:last-child th,
+    .capa-summary-table tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .capa-summary-over {
+      color: var(--danger);
+    }
+
     .capa-summary-item {
       border: 1px solid rgba(0, 95, 84, 0.16);
       border-radius: 8px;
@@ -1520,6 +1558,7 @@
       });
 
       if (!validatePriceBandSums(activeRoot, mark)) ok = false;
+      if (!validateBrandAverageSums(activeRoot, mark)) ok = false;
       return ok;
     }
 
@@ -1609,6 +1648,45 @@
       });
 
       return [...groups.values()];
+    }
+
+    function validateBrandAverageSums(root = document, mark = false) {
+      let ok = true;
+
+      PRODUCT_CATEGORIES.forEach((category) => {
+        const questions = getBrandAverageQuestions(category);
+        const fieldsInRoot = questions
+          .map((question) => root.querySelector(`.field[data-code="${cssEscape(question.code)}"]`))
+          .filter(Boolean)
+          .filter((field) => !field.classList.contains('hidden-by-answer'));
+
+        if (!fieldsInRoot.length) return;
+
+        const capa = findCapaValue(category);
+        if (capa === null) return;
+
+        const sum = questions.reduce((total, question) => total + (numberValue(state.answers[question.code]) || 0), 0);
+        if (sum <= capa) return;
+
+        ok = false;
+        if (!mark) return;
+
+        fieldsInRoot.forEach((field) => {
+          setBusinessFieldError(
+            field,
+            `Сумма средних продаж по брендам (${sum}) не может быть больше CAPA магазина (${capa}).`
+          );
+        });
+      });
+
+      return ok;
+    }
+
+    function getBrandAverageQuestions(category) {
+      return (state.config.questions || []).filter((question) => {
+        const info = getSalesQuestionInfo(question);
+        return info && info.kind === 'brand_average' && info.category.key === category.key;
+      });
     }
 
     function getSalesQuestionInfo(question) {
@@ -2210,8 +2288,8 @@
 
     function updateCapaSummary() {
       document.querySelectorAll('[data-capa-summary]').forEach((summary) => {
-        const items = getCapaSummaryItems();
-        if (!items.length) {
+        const matrix = getCapaSummaryMatrix();
+        if (!matrix.categories.length) {
           summary.classList.remove('show');
           summary.innerHTML = '';
           return;
@@ -2220,30 +2298,64 @@
         summary.classList.add('show');
         summary.innerHTML = `
           <div class="capa-summary-title">CAPA магазина</div>
-          <div class="capa-summary-grid">
-            ${items.map((item) => `
-              <div class="capa-summary-item">
-                <span class="capa-summary-label">${escapeHtml(item.label)}</span>
-                <span class="capa-summary-value">${item.value === null ? '-' : escapeHtml(item.value)}</span>
-              </div>
-            `).join('')}
+          <div class="capa-summary-table-wrap">
+            <table class="capa-summary-table">
+              <thead>
+                <tr>
+                  <th></th>
+                  ${matrix.categories.map((category) => `<th>${escapeHtml(category.label)}</th>`).join('')}
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <th>CAPA магазина</th>
+                  ${matrix.categories.map((category) => `<td>${formatSummaryNumber(matrix.capa[category.key])}</td>`).join('')}
+                </tr>
+                ${matrix.brandRows.map((row) => `
+                  <tr>
+                    <th>${escapeHtml(row.brand)}</th>
+                    ${matrix.categories.map((category) => {
+                      const value = row.values[category.key];
+                      const over = isBrandCategoryOverCapa(category, value);
+                      return `<td class="${over ? 'capa-summary-over' : ''}">${formatSummaryNumber(value)}</td>`;
+                    }).join('')}
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
           </div>
         `;
       });
     }
 
-    function getCapaSummaryItems() {
-      return PRODUCT_CATEGORIES
-        .map((category) => {
-          const question = findCapaQuestion(category);
-          if (!question) return null;
-          const value = numberValue(state.answers[question.code]);
-          return {
-            label: category.label,
-            value: value === null ? null : String(value),
-          };
-        })
-        .filter(Boolean);
+    function getCapaSummaryMatrix() {
+      const categories = PRODUCT_CATEGORIES.filter((category) => findCapaQuestion(category));
+      const capa = Object.fromEntries(categories.map((category) => [category.key, findCapaValue(category)]));
+      const brands = getAverageSalesBrands();
+      const brandRows = brands.map((brand) => ({
+        brand,
+        values: Object.fromEntries(categories.map((category) => [category.key, findBrandAverageValue({ category, brand })])),
+      }));
+
+      return { categories, capa, brandRows };
+    }
+
+    function getAverageSalesBrands() {
+      const brands = new Set();
+      (state.config.questions || []).forEach((question) => {
+        const info = getSalesQuestionInfo(question);
+        if (info && info.kind === 'brand_average') brands.add(info.brand);
+      });
+      return SALES_BRANDS.filter((brand) => brands.has(brand));
+    }
+
+    function formatSummaryNumber(value) {
+      return value === null || value === undefined ? '-' : escapeHtml(value);
+    }
+
+    function isBrandCategoryOverCapa(category, value) {
+      const capa = findCapaValue(category);
+      return capa !== null && value !== null && value > capa;
     }
 
     const PRODUCT_CATEGORIES = [
