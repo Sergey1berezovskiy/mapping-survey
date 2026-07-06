@@ -1686,15 +1686,27 @@
 
         const typeQuestion = findBrandZoneQuestion(brand, 'bz_types_');
         const totalQuestion = findBrandZoneQuestion(brand, 'bz_total_');
+        const displayQuestion = findBrandZoneQuestion(brand, 'brand_display_');
         if (!typeQuestion || !totalQuestion) return;
 
         const categoryField = root.querySelector(`.field[data-code="${cssEscape(categoryQuestion.code)}"]`);
         const typeField = root.querySelector(`.field[data-code="${cssEscape(typeQuestion.code)}"]`);
         const totalField = root.querySelector(`.field[data-code="${cssEscape(totalQuestion.code)}"]`);
-        if (!categoryField && !typeField && !totalField) return;
+        const displayField = displayQuestion
+          ? root.querySelector(`.field[data-code="${cssEscape(displayQuestion.code)}"]`)
+          : null;
+        if (!categoryField && !typeField && !totalField && !displayField) return;
 
-        const selectedCategories = selectedAnswerList(categoryQuestion.code)
-          .filter((option) => normalizeSearchText(option) !== normalizeSearchText('БЗ отсутствует'));
+        const selectedCategoryAnswers = selectedAnswerList(categoryQuestion.code);
+        const brandZoneAbsent = selectedCategoryAnswers.some(isBrandZoneAbsentOption);
+        if (brandZoneAbsent && displayQuestion && selectedAnswerList(displayQuestion.code).some(isOnBzDisplayOption)) {
+          ok = false;
+          if (mark && displayField) {
+            setBusinessFieldError(displayField, 'Если БЗ отсутствует, выкладка не может быть на BZ.');
+          }
+        }
+
+        const selectedCategories = selectedCategoryAnswers.filter((option) => !isBrandZoneAbsentOption(option));
         if (!selectedCategories.length) return;
 
         const selectedTypes = selectedAnswerList(typeQuestion.code);
@@ -1736,6 +1748,16 @@
       const value = state.answers[code];
       if (Array.isArray(value)) return value;
       return value ? [value] : [];
+    }
+
+    function isBrandZoneAbsentOption(option) {
+      const text = normalizeSearchText(option);
+      return text.includes('бз') && text.includes('отсутств');
+    }
+
+    function isOnBzDisplayOption(option) {
+      const text = normalizeSearchText(option);
+      return text.includes('bz') && !text.includes('отсутств');
     }
 
     function getMinimumBrandZoneTotal(categories, nonSisTypes, hasSis) {
@@ -2598,18 +2620,18 @@
 
     function enforceExclusiveBrandZoneAbsence(field, clickedChip) {
       if (!field.dataset.code.startsWith('bz_categories_')) return;
-      const absentOption = 'БЗ отсутствует';
 
-      if (clickedChip.dataset.option === absentOption && clickedChip.classList.contains('active')) {
+      if (isBrandZoneAbsentOption(clickedChip.dataset.option) && clickedChip.classList.contains('active')) {
         field.querySelectorAll('.chip').forEach((chip) => {
-          chip.classList.toggle('active', chip.dataset.option === absentOption);
+          chip.classList.toggle('active', isBrandZoneAbsentOption(chip.dataset.option));
         });
+        clearOnBzDisplayForBrand(field.dataset.group);
         return;
       }
 
-      if (clickedChip.dataset.option !== absentOption && clickedChip.classList.contains('active')) {
+      if (!isBrandZoneAbsentOption(clickedChip.dataset.option) && clickedChip.classList.contains('active')) {
         field.querySelectorAll('.chip').forEach((chip) => {
-          if (chip.dataset.option === absentOption) chip.classList.remove('active');
+          if (isBrandZoneAbsentOption(chip.dataset.option)) chip.classList.remove('active');
         });
       }
     }
@@ -2617,6 +2639,12 @@
     function enforceExclusiveBrandDisplayAbsence(field, clickedChip) {
       if (!isBrandDisplayField(field)) return;
       const absentOption = 'Выкладка отсутствует';
+
+      if (isOnBzDisplayOption(clickedChip.dataset.option) && clickedChip.classList.contains('active') && isBrandZoneAbsent(field.dataset.group)) {
+        clickedChip.classList.remove('active');
+        state.answers[field.dataset.code] = [...field.querySelectorAll('.chip.active')].map((item) => item.dataset.option);
+        return;
+      }
 
       if (clickedChip.dataset.option === absentOption && clickedChip.classList.contains('active')) {
         field.querySelectorAll('.chip').forEach((chip) => {
@@ -2636,7 +2664,7 @@
       document.querySelectorAll('.field[data-code^="bz_categories_"]').forEach((categoryField) => {
         const brand = categoryField.dataset.group;
         const absent = [...categoryField.querySelectorAll('.chip.active')]
-          .some((chip) => chip.dataset.option === 'БЗ отсутствует');
+          .some((chip) => isBrandZoneAbsentOption(chip.dataset.option));
 
         document.querySelectorAll(`.section[data-section-code="brand_zones"] .field[data-group="${cssEscape(brand)}"]`)
           .forEach((field) => {
@@ -2647,11 +2675,36 @@
               clearFieldAnswer(field);
             }
           });
+        if (absent) clearOnBzDisplayForBrand(brand);
       });
     }
 
     function isBrandDisplayField(field) {
       return String(field.dataset.code || '').startsWith('brand_display_');
+    }
+
+    function isBrandZoneAbsent(brand) {
+      const categoryField = document.querySelector(`.field[data-code^="bz_categories_"][data-group="${cssEscape(brand)}"]`);
+      if (!categoryField) return false;
+      return [...categoryField.querySelectorAll('.chip.active')].some((chip) => isBrandZoneAbsentOption(chip.dataset.option));
+    }
+
+    function clearOnBzDisplayForBrand(brand) {
+      const displayField = document.querySelector(`.field[data-code^="brand_display_"][data-group="${cssEscape(brand)}"]`);
+      if (!displayField) return;
+
+      let changed = false;
+      displayField.querySelectorAll('.chip.active').forEach((chip) => {
+        if (isOnBzDisplayOption(chip.dataset.option)) {
+          chip.classList.remove('active');
+          changed = true;
+        }
+      });
+      if (changed) {
+        state.answers[displayField.dataset.code] = [...displayField.querySelectorAll('.chip.active')].map((item) => item.dataset.option);
+        displayField.classList.remove('invalid');
+        delete displayField.dataset.businessInvalid;
+      }
     }
 
     function clearFieldAnswer(field) {
