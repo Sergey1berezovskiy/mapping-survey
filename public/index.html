@@ -963,13 +963,16 @@
             renderFileStatus(fileList, 'Подготавливаем фото', selectedNames, files.map((file) => file.size || 0), -1, 'uploading');
             let preparedCount = 0;
             const storePrefix = getSelectedStoreFilePrefix();
-            const preparedFiles = await Promise.all(files.map(async (file, index) => {
+            const preparedFiles = [];
+            for (let index = 0; index < files.length; index += 1) {
+              const file = files[index];
               renderFileStatus(fileList, `Подготавливаем фото: ${preparedCount + 1} из ${files.length}`, selectedNames, files.map((item) => item.size || 0), index, 'uploading');
               const prepared = await readFileAsPayload(file, storePrefix, existingNames.length + index + 1, code);
+              preparedFiles.push(prepared);
               preparedCount += 1;
               renderFileStatus(fileList, `Подготовлено фото: ${preparedCount} из ${files.length}`, selectedNames, files.map((item) => item.size || 0), index, 'uploading');
-              return prepared;
-            }));
+              await waitForBrowser();
+            }
             renderFileStatus(fileList, `Загружаем ${files.length} фото`, preparedFiles.map((file) => file.name), preparedFiles.map((file) => file.size || 0), -1, 'uploading');
 
             let urls = [];
@@ -1497,11 +1500,17 @@
             file.name || `photo_${photoNumber}.heic`
           );
         } catch (error) {
-          return readOriginalImagePayload(
-            file,
-            buildPhotoFileName(storePrefix, photoNumber, getImageExtension(file), questionCode),
-            file.name || `photo_${photoNumber}.heic`
-          );
+          await waitForBrowser(350);
+          try {
+            const converted = await convertHeicToJpegBlob(file);
+            return resizeImageBlob(
+              converted,
+              buildPhotoFileName(storePrefix, photoNumber, 'jpg', questionCode),
+              file.name || `photo_${photoNumber}.heic`
+            );
+          } catch (retryError) {
+            throw new Error('Не удалось сжать HEIC. Попробуйте выбрать меньше HEIC за раз или пересохранить фото как JPG.');
+          }
         }
       }
 
@@ -1514,25 +1523,6 @@
         buildPhotoFileName(storePrefix, photoNumber, 'jpg', questionCode),
         file.name || `photo_${photoNumber}.jpg`
       );
-    }
-
-    function readOriginalImagePayload(file, driveName, displayName) {
-      return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onerror = () => reject(reader.error);
-        reader.onload = () => {
-          const mimeType = getImageMimeType(file);
-          const base64 = String(reader.result || '').split(',').pop() || '';
-          resolve({
-            name: displayName,
-            driveName,
-            mimeType,
-            data: `data:${mimeType};base64,${base64}`,
-            size: file.size || dataUrlSize(reader.result),
-          });
-        };
-        reader.readAsDataURL(file);
-      });
     }
 
     function resizeImageBlob(blob, driveName, displayName) {
@@ -1616,6 +1606,10 @@
     function dataUrlSize(data) {
       const base64 = String(data || '').split(',').pop() || '';
       return Math.round((base64.length * 3) / 4);
+    }
+
+    function waitForBrowser(ms = 80) {
+      return new Promise((resolve) => setTimeout(resolve, ms));
     }
 
     function isImageFile(file) {
