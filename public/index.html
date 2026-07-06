@@ -1322,6 +1322,7 @@
           field.classList.remove('invalid');
           delete field.dataset.businessInvalid;
           applyConditionalVisibility();
+          validateBusinessRules(true);
           updateCompletionStates();
           saveDraftSoon();
         });
@@ -1655,6 +1656,7 @@
 
       if (!validatePriceBandSums(activeRoot, mark)) ok = false;
       if (!validateBrandAverageSums(activeRoot, mark)) ok = false;
+      if (!validateBrandZoneCounts(activeRoot, mark)) ok = false;
       return ok;
     }
 
@@ -1670,6 +1672,76 @@
       if (error) error.textContent = message;
       field.dataset.businessInvalid = 'true';
       field.classList.add('invalid');
+    }
+
+    function validateBrandZoneCounts(root = document, mark = false) {
+      let ok = true;
+      const categoryQuestions = (state.config.questions || [])
+        .filter((question) => String(question.code || '').startsWith('bz_categories_'));
+
+      categoryQuestions.forEach((categoryQuestion) => {
+        const brand = categoryQuestion.group;
+        const allCategoryField = document.querySelector(`.field[data-code="${cssEscape(categoryQuestion.code)}"]`);
+        if (!allCategoryField || allCategoryField.classList.contains('hidden-by-answer')) return;
+
+        const typeQuestion = findBrandZoneQuestion(brand, 'bz_types_');
+        const totalQuestion = findBrandZoneQuestion(brand, 'bz_total_');
+        if (!typeQuestion || !totalQuestion) return;
+
+        const categoryField = root.querySelector(`.field[data-code="${cssEscape(categoryQuestion.code)}"]`);
+        const typeField = root.querySelector(`.field[data-code="${cssEscape(typeQuestion.code)}"]`);
+        const totalField = root.querySelector(`.field[data-code="${cssEscape(totalQuestion.code)}"]`);
+        if (!categoryField && !typeField && !totalField) return;
+
+        const selectedCategories = selectedAnswerList(categoryQuestion.code)
+          .filter((option) => normalizeSearchText(option) !== normalizeSearchText('БЗ отсутствует'));
+        if (!selectedCategories.length) return;
+
+        const selectedTypes = selectedAnswerList(typeQuestion.code);
+        const total = numberValue(state.answers[totalQuestion.code]);
+        const hasSis = selectedTypes.some((option) => normalizeSearchText(option) === 'sis');
+        const nonSisTypes = selectedTypes.filter((option) => normalizeSearchText(option) !== 'sis');
+        const hasTvCategory = selectedCategories.some((option) => normalizeSearchText(option).includes('тв'));
+        const hasTvStand = selectedTypes.some((option) => {
+          const text = normalizeSearchText(option);
+          return text.includes('тв') && text.includes('тумб');
+        });
+
+        if (hasTvStand && !hasTvCategory) {
+          ok = false;
+          if (mark && typeField) {
+            setBusinessFieldError(typeField, 'ТВ тумбу можно выбрать только если в категориях выбрана ТВ.');
+          }
+        }
+
+        const minTotal = getMinimumBrandZoneTotal(selectedCategories, nonSisTypes, hasSis);
+        if (total !== null && total < minTotal) {
+          ok = false;
+          if (mark && totalField) {
+            setBusinessFieldError(totalField, `Общее количество БЗ должно быть не меньше ${minTotal} с учетом выбранных категорий и типов.`);
+          }
+        }
+      });
+
+      return ok;
+    }
+
+    function findBrandZoneQuestion(brand, codePrefix) {
+      return (state.config.questions || []).find((question) => (
+        question.group === brand && String(question.code || '').startsWith(codePrefix)
+      )) || null;
+    }
+
+    function selectedAnswerList(code) {
+      const value = state.answers[code];
+      if (Array.isArray(value)) return value;
+      return value ? [value] : [];
+    }
+
+    function getMinimumBrandZoneTotal(categories, nonSisTypes, hasSis) {
+      if (hasSis && !nonSisTypes.length) return 1;
+      const base = Math.max(categories.length, nonSisTypes.length || 0);
+      return hasSis ? base + 1 : base;
     }
 
     function getSalesValidationError(question, value) {
