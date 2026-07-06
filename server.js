@@ -12,9 +12,12 @@ const port = process.env.PORT || 3000;
 const scriptUrl = process.env.APPS_SCRIPT_URL;
 const driveFolderId = process.env.GOOGLE_DRIVE_FOLDER_ID || process.env.DRIVE_FOLDER_ID || '';
 const driveServiceAccountJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON || process.env.DRIVE_SERVICE_ACCOUNT_JSON || '';
+const googleOauthClientId = process.env.GOOGLE_OAUTH_CLIENT_ID || '';
+const googleOauthClientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET || '';
+const googleOauthRefreshToken = process.env.GOOGLE_OAUTH_REFRESH_TOKEN || '';
 const jsonLimitBytes = Number(process.env.JSON_LIMIT_BYTES || 200 * 1024 * 1024);
 const upstreamTimeoutMs = Number(process.env.UPSTREAM_TIMEOUT_MS || 120000);
-const serviceVersion = 'railway-survey-2026-07-06-drive-upload';
+const serviceVersion = 'railway-survey-2026-07-06-drive-oauth-upload';
 const cacheTtlMs = Number(process.env.API_CACHE_TTL_MS || 5 * 60 * 1000);
 const apiCache = new Map();
 let driveAccessToken = null;
@@ -47,6 +50,9 @@ const server = http.createServer(async (req, res) => {
         scriptUrlConfigured: Boolean(scriptUrl),
         driveFolderConfigured: Boolean(driveFolderId),
         driveServiceAccountConfigured: Boolean(driveServiceAccountJson),
+        googleOauthClientConfigured: Boolean(googleOauthClientId && googleOauthClientSecret),
+        googleOauthRefreshTokenConfigured: Boolean(googleOauthRefreshToken),
+        driveAuthMode: getDriveAuthMode(),
       });
       return;
     }
@@ -58,6 +64,16 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === 'GET' && url.pathname === '/debug/drive') {
       await handleDriveDebug(res);
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/debug/oauth/start') {
+      handleOauthStart(req, res);
+      return;
+    }
+
+    if (req.method === 'GET' && url.pathname === '/debug/oauth/callback') {
+      await handleOauthCallback(req, res, url);
       return;
     }
 
@@ -215,6 +231,42 @@ async function getDriveAccessToken() {
     return driveAccessToken.token;
   }
 
+  if (googleOauthRefreshToken) {
+    return getDriveAccessTokenByRefreshToken();
+  }
+
+  return getDriveAccessTokenByServiceAccount();
+}
+
+async function getDriveAccessTokenByRefreshToken() {
+  if (!googleOauthClientId || !googleOauthClientSecret) {
+    throw new Error('GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET are required when GOOGLE_OAUTH_REFRESH_TOKEN is configured.');
+  }
+
+  const response = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: googleOauthClientId,
+      client_secret: googleOauthClientSecret,
+      refresh_token: googleOauthRefreshToken,
+      grant_type: 'refresh_token',
+    }),
+  });
+
+  const payload = await response.json().catch(() => null);
+  if (!response.ok || !payload || !payload.access_token) {
+    throw new Error(payload && payload.error_description ? payload.error_description : 'Google OAuth refresh token auth failed.');
+  }
+
+  driveAccessToken = {
+    token: payload.access_token,
+    expiresAt: Date.now() + Number(payload.expires_in || 3600) * 1000,
+  };
+  return driveAccessToken.token;
+}
+
+async function getDriveAccessTokenByServiceAccount() {
   const account = parseServiceAccount();
   const now = Math.floor(Date.now() / 1000);
   const header = base64UrlJson({ alg: 'RS256', typ: 'JWT' });
@@ -251,6 +303,96 @@ async function getDriveAccessToken() {
     expiresAt: Date.now() + Number(payload.expires_in || 3600) * 1000,
   };
   return driveAccessToken.token;
+}
+
+function getDriveAuthMode() {
+  if (googleOauthRefreshToken) return 'oauth';
+  if (driveServiceAccountJson) return 'service_account';
+  return 'not_configured';
+}
+
+function getRequestOrigin(req) {
+  const proto = req.headers['x-forwarded-proto'] || 'https';
+  const host = req.headers['x-forwarded-host'] || req.headers.host || 'localhost';
+  return `${proto}://${host}`;
+}
+
+function getOauthRedirectUri(req) {
+  return `${getRequestOrigin(req)}/debug/oauth/callback`;
+}
+
+function handleOauthStart(req, res) {
+  if (!googleOauthClientId) {
+    sendText(res, 500, 'GOOGLE_OAUTH_CLIENT_ID is not configured on Railway.');
+    return;
+  }
+
+  const params = new URLSearchParams({
+    client_id: googleOauthClientId,
+    redirect_uri: getOauthRedirectUri(req),
+    response_type: 'code',
+    scope: 'https://www.googleapis.com/auth/drive',
+    access_type: 'offline',
+    prompt: 'consent',
+  });
+
+  res.writeHead(302, {
+    Location: `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`,
+  });
+  res.end();
+}
+
+async function handleOauthCallback(req, res, url) {
+  if (!googleOauthClientId || !googleOauthClientSecret) {
+    sendText(res, 500, 'GOOGLE_OAUTH_CLIENT_ID and GOOGLE_OAUTH_CLIENT_SECRET are not configured on Railway.');
+    return;
+  }
+
+  const code = url.searchParams.get('code');
+  const error = url.searchParams.get('error');
+  if (error) {
+    sendText(res, 400, `Google OAuth error: ${error}`);
+    return;
+  }
+  if (!code) {
+    sendText(res, 400, 'OAuth code is missing.');
+    return;
+  }
+
+  const response = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      code,
+      client_id: googleOauthClientId,
+      client_secret: googleOauthClientSecret,
+      redirect_uri: getOauthRedirectUri(req),
+      grant_type: 'authorization_code',
+    }),
+  });
+
+  const payload = await response.json().catch(() => null);
+  if (!response.ok || !payload) {
+    sendText(res, 500, `Token exchange failed: ${JSON.stringify(payload)}`);
+    return;
+  }
+
+  if (!payload.refresh_token) {
+    sendText(res, 500, 'Google did not return refresh_token. Open /debug/oauth/start again or remove previous app access in Google Account -> Security -> Third-party access, then retry.');
+    return;
+  }
+
+  const escaped = escapeHtml(payload.refresh_token);
+  sendHtml(res, 200, `<!doctype html>
+<html lang="ru">
+<head><meta charset="utf-8"><title>Google OAuth token</title></head>
+<body style="font-family: Arial, sans-serif; padding: 24px; line-height: 1.45;">
+  <h1>Refresh token получен</h1>
+  <p>Добавь в Railway переменную <strong>GOOGLE_OAUTH_REFRESH_TOKEN</strong> со значением ниже, затем сделай redeploy/restart.</p>
+  <textarea readonly style="width: 100%; min-height: 160px;">${escaped}</textarea>
+  <p>После этого проверь <code>/debug/version</code> и <code>/debug/drive</code>.</p>
+</body>
+</html>`);
 }
 
 function parseServiceAccount() {
@@ -295,6 +437,15 @@ function sanitizeFileName(name) {
   return String(name || 'upload')
     .replace(/[\\/:*?"<>|#%{}~&]/g, '_')
     .slice(0, 180);
+}
+
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 async function handleAppsScriptDebug(res) {
@@ -481,6 +632,11 @@ function sendJson(res, status, payload) {
 function sendText(res, status, text) {
   res.writeHead(status, { 'Content-Type': 'text/plain; charset=utf-8' });
   res.end(text);
+}
+
+function sendHtml(res, status, html) {
+  res.writeHead(status, { 'Content-Type': 'text/html; charset=utf-8' });
+  res.end(html);
 }
 
 server.listen(port, () => {
