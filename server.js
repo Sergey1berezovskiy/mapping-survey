@@ -10,7 +10,14 @@ const publicDir = path.join(__dirname, 'public');
 
 const port = process.env.PORT || 3000;
 const scriptUrl = process.env.APPS_SCRIPT_URL;
-const spreadsheetId = extractSpreadsheetId(process.env.GOOGLE_SHEETS_SPREADSHEET_ID || process.env.GOOGLE_SHEETS_URL || '');
+const spreadsheetId = extractSpreadsheetId(
+  process.env.GOOGLE_SHEETS_RESULTS_SPREADSHEET_ID
+    || process.env.GOOGLE_SHEETS_RESULTS_URL
+    || process.env.GOOGLE_SHEETS_SPREADSHEET_ID
+    || process.env.GOOGLE_SHEETS_URL
+    || ''
+);
+const resultsSheetName = process.env.GOOGLE_SHEETS_RESULTS_SHEET || process.env.GOOGLE_SHEETS_SHEET_NAME || 'Лист1';
 const driveFolderId = process.env.GOOGLE_DRIVE_FOLDER_ID || process.env.DRIVE_FOLDER_ID || '';
 const driveServiceAccountJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON || process.env.DRIVE_SERVICE_ACCOUNT_JSON || '';
 const googleOauthClientId = process.env.GOOGLE_OAUTH_CLIENT_ID || '';
@@ -18,15 +25,19 @@ const googleOauthClientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET || '';
 const googleOauthRefreshToken = process.env.GOOGLE_OAUTH_REFRESH_TOKEN || '';
 const jsonLimitBytes = Number(process.env.JSON_LIMIT_BYTES || 200 * 1024 * 1024);
 const upstreamTimeoutMs = Number(process.env.UPSTREAM_TIMEOUT_MS || 120000);
-const serviceVersion = 'railway-survey-2026-07-06-direct-sheets-submit';
+const serviceVersion = 'railway-survey-2026-07-06-single-sheet-submit';
 const cacheTtlMs = Number(process.env.API_CACHE_TTL_MS || 5 * 60 * 1000);
 const apiCache = new Map();
 let driveAccessToken = null;
 
-const SHEETS = {
-  surveys: 'Анкеты',
-  answers: 'Ответы на вопросы',
-};
+const RESULT_BASE_HEADERS = [
+  'ID анкеты',
+  'Дата отправки',
+  'Сотрудник',
+  'Руководитель',
+  'Магазин/ТТ',
+  'Статус',
+];
 
 const GOOGLE_API_SCOPES = [
   'https://www.googleapis.com/auth/drive',
@@ -60,6 +71,7 @@ const server = http.createServer(async (req, res) => {
         version: serviceVersion,
         scriptUrlConfigured: Boolean(scriptUrl),
         spreadsheetConfigured: Boolean(spreadsheetId),
+        resultsSheetName,
         driveFolderConfigured: Boolean(driveFolderId),
         driveServiceAccountConfigured: Boolean(driveServiceAccountJson),
         googleOauthClientConfigured: Boolean(googleOauthClientId && googleOauthClientSecret),
@@ -565,6 +577,7 @@ async function handleSheetsDebug(res) {
 
     sendJson(res, 200, {
       ok: true,
+      resultsSheetName,
       spreadsheet: payload,
     });
   } catch (error) {
@@ -581,59 +594,48 @@ async function submitSurveyToSheets(payload) {
   const meta = payload && payload.meta ? payload.meta : {};
   const answers = payload && Array.isArray(payload.answers) ? payload.answers : [];
 
-  const surveyRow = {
+  const row = {
     'ID анкеты': surveyId,
-    'Пользователь Lark': '',
     'Сотрудник': meta.employee || '',
     'Руководитель': meta.manager || '',
     'Магазин/ТТ': meta.store || '',
-    'Дата создания': now,
     'Дата отправки': now,
     'Статус': 'Отправлено',
-    'Комментарий администратора': '',
   };
 
-  const answerRows = answers.map((answer) => ({
-    'ID ответа': crypto.randomUUID(),
-    'ID анкеты': surveyId,
-    'Код вопроса': answer.questionCode || '',
-    'Текст вопроса на момент ответа': answer.questionText || '',
-    'Тип вопроса': answer.type || '',
-    'Значение': answer.value || '',
-    'Выбранные варианты': Array.isArray(answer.selectedOptions)
-      ? answer.selectedOptions.join('; ')
-      : (answer.selectedOptions || ''),
-    'Файлы/ссылки': Array.isArray(answer.files) ? answer.files.join('\n') : (answer.files || ''),
-    'Дата изменения': now,
-  }));
-
-  await appendObjectsByHeaders(SHEETS.surveys, [surveyRow]);
-  await appendObjectsByHeaders(SHEETS.answers, answerRows);
-
-  return { ok: true, surveyId, mode: 'sheets_api' };
-}
-
-async function appendObjectsByHeaders(sheetName, rows) {
-  if (!rows.length) return;
-
-  const headers = await getSheetHeaders(sheetName);
-  if (!headers.length) {
-    throw new Error(`Sheet "${sheetName}" has no header row.`);
+  for (const answer of answers) {
+    const header = getResultAnswerHeader(answer);
+    if (!header) continue;
+    row[header] = getResultAnswerValue(answer);
   }
 
-  const values = rows.map((row) => headers.map((header) => row[header] ?? ''));
-  await appendSheetValues(sheetName, values);
+  await appendResultRow(row);
+
+  return { ok: true, surveyId, mode: 'sheets_api_single_sheet' };
+}
+
+async function appendResultRow(row) {
+  await ensureResultsSheet();
+
+  const existingHeaders = await getSheetHeaders(resultsSheetName);
+  const nextHeaders = mergeHeaders(existingHeaders, Object.keys(row));
+  if (nextHeaders.length !== existingHeaders.length) {
+    await writeSheetHeaders(resultsSheetName, nextHeaders);
+    apiCache.set(getSheetHeadersCacheKey(resultsSheetName), { savedAt: Date.now(), payload: nextHeaders });
+  }
+
+  await appendSheetValues(resultsSheetName, [nextHeaders.map((header) => row[header] ?? '')]);
 }
 
 async function getSheetHeaders(sheetName) {
-  const cacheKey = `sheetHeaders:${sheetName}`;
+  const cacheKey = getSheetHeadersCacheKey(sheetName);
   const cached = apiCache.get(cacheKey);
   if (cached && Date.now() - cached.savedAt < cacheTtlMs) {
     return cached.payload;
   }
 
   const token = await getDriveAccessToken();
-  const response = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(quoteSheetName(sheetName) + '!1:1')}?majorDimension=ROWS`, {
+  const response = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(quoteSheetName(sheetName) + '!A1:ZZ1')}?majorDimension=ROWS`, {
     headers: {
       Authorization: `Bearer ${token}`,
     },
@@ -649,6 +651,114 @@ async function getSheetHeaders(sheetName) {
     : [];
   apiCache.set(cacheKey, { savedAt: Date.now(), payload: headers });
   return headers;
+}
+
+function getSheetHeadersCacheKey(sheetName) {
+  return `sheetHeaders:${sheetName}`;
+}
+
+async function ensureResultsSheet() {
+  const spreadsheet = await getSpreadsheetStructure();
+  const sheetExists = (spreadsheet.sheets || []).some((sheet) => sheet.properties && sheet.properties.title === resultsSheetName);
+  if (!sheetExists) {
+    await batchUpdateSpreadsheet([{
+      addSheet: {
+        properties: {
+          title: resultsSheetName,
+        },
+      },
+    }]);
+    apiCache.delete('spreadsheetStructure');
+  }
+
+  const headers = await getSheetHeaders(resultsSheetName).catch(() => []);
+  if (!headers.length) {
+    await writeSheetHeaders(resultsSheetName, RESULT_BASE_HEADERS);
+    apiCache.set(getSheetHeadersCacheKey(resultsSheetName), { savedAt: Date.now(), payload: RESULT_BASE_HEADERS });
+  }
+}
+
+async function getSpreadsheetStructure() {
+  const cached = apiCache.get('spreadsheetStructure');
+  if (cached && Date.now() - cached.savedAt < cacheTtlMs) {
+    return cached.payload;
+  }
+
+  const token = await getDriveAccessToken();
+  const response = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}?fields=spreadsheetId,properties.title,sheets.properties(sheetId,title)`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw new Error(payload && payload.error && payload.error.message ? payload.error.message : `Google Sheets structure read failed: ${response.status}`);
+  }
+
+  apiCache.set('spreadsheetStructure', { savedAt: Date.now(), payload });
+  return payload;
+}
+
+async function writeSheetHeaders(sheetName, headers) {
+  const token = await getDriveAccessToken();
+  const range = `${quoteSheetName(sheetName)}!A1`;
+  const response = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(range)}?valueInputOption=RAW`, {
+    method: 'PUT',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      majorDimension: 'ROWS',
+      values: [headers],
+    }),
+  });
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw new Error(payload && payload.error && payload.error.message ? payload.error.message : `Google Sheets headers write failed: ${response.status}`);
+  }
+}
+
+async function batchUpdateSpreadsheet(requests) {
+  const token = await getDriveAccessToken();
+  const response = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}:batchUpdate`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ requests }),
+  });
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw new Error(payload && payload.error && payload.error.message ? payload.error.message : `Google Sheets batch update failed: ${response.status}`);
+  }
+}
+
+function mergeHeaders(existingHeaders, rowHeaders) {
+  const merged = existingHeaders.length ? [...existingHeaders] : [...RESULT_BASE_HEADERS];
+  for (const header of rowHeaders) {
+    if (header && !merged.includes(header)) merged.push(header);
+  }
+  return merged;
+}
+
+function getResultAnswerHeader(answer) {
+  return String(answer && (answer.questionText || answer.questionCode) || '').trim();
+}
+
+function getResultAnswerValue(answer) {
+  if (!answer) return '';
+  if (answer.files) {
+    return Array.isArray(answer.files) ? answer.files.join('\n') : answer.files;
+  }
+  if (Array.isArray(answer.selectedOptions)) {
+    return answer.selectedOptions.join('; ');
+  }
+  return answer.value || answer.selectedOptions || '';
 }
 
 async function appendSheetValues(sheetName, values) {

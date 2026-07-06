@@ -2,6 +2,8 @@
 
 Railway uploads survey photos directly to Google Drive API. Apps Script is still used for form config and references. The final response can be written directly from Railway to Google Sheets API, which is faster than sending it through Apps Script.
 
+The source spreadsheet with questions/references and the result spreadsheet can be different. This is recommended when you want to share only submitted answers with reviewers.
+
 ## Recommended for personal Google Drive
 
 Service accounts cannot own files in a regular personal "My Drive" folder, so for a personal Google account use OAuth.
@@ -29,13 +31,31 @@ Add or keep:
 
 ```text
 APPS_SCRIPT_URL=...
-GOOGLE_SHEETS_URL=...
+GOOGLE_SHEETS_RESULTS_URL=...
+GOOGLE_SHEETS_RESULTS_SHEET=Лист1
 GOOGLE_DRIVE_FOLDER_ID=...
 GOOGLE_OAUTH_CLIENT_ID=...
 GOOGLE_OAUTH_CLIENT_SECRET=...
 ```
 
-`GOOGLE_SHEETS_URL` can be the full Google Sheets link. You can also use `GOOGLE_SHEETS_SPREADSHEET_ID` and paste only the spreadsheet id.
+`GOOGLE_SHEETS_RESULTS_URL` is the full link to the separate spreadsheet where submitted answers are written. You can also use `GOOGLE_SHEETS_RESULTS_SPREADSHEET_ID` and paste only the spreadsheet id.
+
+Legacy variables `GOOGLE_SHEETS_URL` and `GOOGLE_SHEETS_SPREADSHEET_ID` are still supported as fallback, but the `RESULTS` names are preferred because the source spreadsheet and result spreadsheet can be different.
+
+`GOOGLE_SHEETS_RESULTS_SHEET` is optional. It is the tab where Railway writes submitted surveys. Default: `Лист1`.
+
+Railway writes one submitted survey per row. Base columns are created automatically:
+
+```text
+ID анкеты
+Дата отправки
+Сотрудник
+Руководитель
+Магазин/ТТ
+Статус
+```
+
+Survey questions are added automatically as extra columns.
 
 `GOOGLE_DRIVE_FOLDER_ID` is the folder id from the Drive URL:
 
