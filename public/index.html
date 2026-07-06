@@ -659,10 +659,12 @@
     const TARGET_IMAGE_BYTES = 500 * 1024;
     const PHOTO_UPLOAD_BATCH_SIZE = 1;
     const MAX_SOURCE_FILE_BYTES = 10 * 1024 * 1024;
+    const HEIC_CONVERTER_URL = 'https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js';
     const FORM_CONFIG_CACHE_KEY = 'mappingSurvey.formConfig.v1';
     const REFERENCES_CACHE_KEY = 'mappingSurvey.references.v3';
     const DRAFT_CACHE_KEY = 'mappingSurvey.draft.v1';
     let draftSaveTimer = null;
+    let heicConverterPromise = null;
 
     const els = {
       loading: document.querySelector('#loading'),
@@ -1487,31 +1489,26 @@
       }
 
       if (isHeicFile(file)) {
-        return readOriginalImagePayload(file, storePrefix, photoNumber);
+        const converted = await convertHeicToJpegBlob(file);
+        return resizeImageBlob(
+          converted,
+          buildPhotoFileName(storePrefix, photoNumber, 'jpg'),
+          file.name || `photo_${photoNumber}.heic`
+        );
       }
 
       return resizeImageFile(file, storePrefix, photoNumber);
     }
 
-    function readOriginalImagePayload(file, storePrefix, photoNumber) {
-      return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onerror = () => reject(reader.error);
-        reader.onload = () => {
-          const mimeType = getImageMimeType(file);
-          const base64 = String(reader.result || '').split(',').pop() || '';
-          resolve({
-            name: buildPhotoFileName(storePrefix, photoNumber, getImageExtension(file)),
-            mimeType,
-            data: `data:${mimeType};base64,${base64}`,
-            size: file.size || dataUrlSize(reader.result),
-          });
-        };
-        reader.readAsDataURL(file);
-      });
+    function resizeImageFile(file, storePrefix, photoNumber) {
+      return resizeImageBlob(
+        file,
+        buildPhotoFileName(storePrefix, photoNumber, 'jpg'),
+        file.name || `photo_${photoNumber}.jpg`
+      );
     }
 
-    function resizeImageFile(file, storePrefix, photoNumber) {
+    function resizeImageBlob(blob, driveName, displayName) {
       return new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onerror = () => reject(reader.error);
@@ -1520,9 +1517,9 @@
           image.onerror = () => reject(new Error('Не удалось открыть изображение'));
           image.onload = () => {
             const output = compressImageToTarget(image);
-            const outputName = buildPhotoFileName(storePrefix, photoNumber, 'jpg');
             resolve({
-              name: outputName,
+              name: displayName,
+              driveName,
               mimeType: 'image/jpeg',
               data: output.data,
               size: output.size,
@@ -1530,8 +1527,34 @@
           };
           image.src = reader.result;
         };
-        reader.readAsDataURL(file);
+        reader.readAsDataURL(blob);
       });
+    }
+
+    async function convertHeicToJpegBlob(file) {
+      await loadHeicConverter();
+      const converted = await window.heic2any({
+        blob: file,
+        toType: 'image/jpeg',
+        quality: IMAGE_JPEG_QUALITY,
+      });
+      return Array.isArray(converted) ? converted[0] : converted;
+    }
+
+    function loadHeicConverter() {
+      if (window.heic2any) return Promise.resolve();
+      if (heicConverterPromise) return heicConverterPromise;
+
+      heicConverterPromise = new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = HEIC_CONVERTER_URL;
+        script.async = true;
+        script.onload = () => window.heic2any ? resolve() : reject(new Error('HEIC converter is unavailable.'));
+        script.onerror = () => reject(new Error('Не удалось загрузить конвертер HEIC. Проверьте интернет и попробуйте еще раз.'));
+        document.head.appendChild(script);
+      });
+
+      return heicConverterPromise;
     }
 
     function compressImageToTarget(image) {

@@ -17,7 +17,7 @@ const googleOauthClientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET || '';
 const googleOauthRefreshToken = process.env.GOOGLE_OAUTH_REFRESH_TOKEN || '';
 const jsonLimitBytes = Number(process.env.JSON_LIMIT_BYTES || 200 * 1024 * 1024);
 const upstreamTimeoutMs = Number(process.env.UPSTREAM_TIMEOUT_MS || 120000);
-const serviceVersion = 'railway-survey-2026-07-06-photo-names-compression';
+const serviceVersion = 'railway-survey-2026-07-06-heic-jpeg-display-names';
 const cacheTtlMs = Number(process.env.API_CACHE_TTL_MS || 5 * 60 * 1000);
 const apiCache = new Map();
 let driveAccessToken = null;
@@ -144,7 +144,7 @@ async function uploadQuestionFilesToDrive(params) {
     }
 
     const buffer = dataUrlToBuffer(file.data);
-    const safeName = sanitizeFileName(file.name || `photo_${index + 1}.jpg`);
+    const safeName = sanitizeFileName(file.driveName || file.name || `photo_${index + 1}.jpg`);
 
     const driveFile = await createDriveFile({
       name: safeName,
