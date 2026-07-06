@@ -343,7 +343,7 @@
         z-index: 15;
         padding: 5px 6px;
         margin: 8px 0 10px;
-        font-size: 9px;
+        font-size: 8.5px;
         line-height: 1.05;
         box-shadow: 0 6px 14px rgba(89, 43, 9, 0.12);
       }
@@ -358,7 +358,7 @@
         min-width: 0;
         width: max-content;
         max-width: none;
-        font-size: 9px;
+        font-size: 8.5px;
       }
 
       .capa-summary-table th,
@@ -370,7 +370,10 @@
       }
 
       .capa-summary-table th {
-        max-width: 62px;
+        min-width: 52px;
+        max-width: 66px;
+        overflow-wrap: normal;
+        word-break: normal;
       }
 
       .capa-summary-table th:first-child,
@@ -380,7 +383,7 @@
       }
 
       .capa-summary-table td {
-        min-width: 47px;
+        min-width: 52px;
         text-align: center;
       }
     }
