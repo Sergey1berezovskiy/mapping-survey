@@ -4,15 +4,19 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <base target="_top">
+  <link rel="icon" href='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="%23ff6900"/><text x="32" y="42" text-anchor="middle" font-family="Arial,Helvetica,sans-serif" font-size="34" font-weight="800" fill="white">M</text></svg>'>
   <style>
     :root {
-      --bg: #f5f7f6;
+      --bg: #fff8f3;
       --panel: #fff;
-      --text: #18201d;
-      --muted: #65716c;
-      --line: #dce2df;
-      --accent: #146f63;
-      --accent-soft: #e4f3ef;
+      --text: #261a12;
+      --muted: #74685f;
+      --line: #eadbd0;
+      --accent: #ff6900;
+      --accent-soft: #fff0e5;
+      --success: #15834f;
+      --success-soft: #edf9f1;
+      --success-line: #9ed9b5;
       --danger: #b53d35;
       font-family: Arial, Helvetica, sans-serif;
     }
@@ -199,7 +203,7 @@
     input:focus,
     textarea:focus {
       border-color: var(--accent);
-      box-shadow: 0 0 0 3px rgba(20, 111, 99, 0.14);
+      box-shadow: 0 0 0 3px rgba(255, 105, 0, 0.16);
     }
 
     .hint {
@@ -225,6 +229,21 @@
       display: block;
     }
 
+    .field.complete:not(.invalid) {
+      border-color: var(--success-line);
+      background: var(--success-soft);
+      transition: background 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+      box-shadow: 0 0 0 2px rgba(21, 131, 79, 0.06);
+    }
+
+    .field.auto-only {
+      display: none;
+    }
+
+    .field.auto-only.show {
+      display: block;
+    }
+
     .field.hidden-by-answer {
       display: none;
     }
@@ -234,10 +253,10 @@
       position: sticky;
       top: 8px;
       z-index: 8;
-      border: 1px solid #b8ddd5;
+      border: 1px solid #ffd2b2;
       border-radius: 8px;
-      background: #e7f5f1;
-      color: #005f54;
+      background: #fff0e5;
+      color: #a94300;
       padding: 9px 10px;
       margin: 10px 0 12px;
       font-size: 12px;
@@ -247,11 +266,6 @@
 
     .capa-summary.show {
       display: block;
-    }
-
-    .capa-summary-title {
-      font-weight: 800;
-      margin-bottom: 6px;
     }
 
     .capa-summary-grid {
@@ -274,7 +288,7 @@
 
     .capa-summary-table th,
     .capa-summary-table td {
-      border-bottom: 1px solid rgba(0, 95, 84, 0.16);
+      border-bottom: 1px solid rgba(169, 67, 0, 0.16);
       padding: 5px 6px;
       text-align: center;
       white-space: nowrap;
@@ -304,7 +318,7 @@
     }
 
     .capa-summary-item {
-      border: 1px solid rgba(0, 95, 84, 0.16);
+      border: 1px solid rgba(169, 67, 0, 0.16);
       border-radius: 8px;
       background: rgba(255, 255, 255, 0.58);
       padding: 8px 10px;
@@ -437,7 +451,7 @@
       border-left: 3px solid var(--accent);
       padding: 7px 10px;
       background: var(--accent-soft);
-      color: #0f5d53;
+      color: #a94300;
       font-size: 14px;
       line-height: 1.35;
     }
@@ -469,8 +483,8 @@
     }
 
     .auto-field input {
-      background: #f7faf8;
-      color: #0f5d53;
+      background: #fffaf6;
+      color: #a94300;
     }
 
     .file-control {
@@ -637,7 +651,7 @@
       gap: 10px;
       border-top: 1px solid var(--line);
       padding: 13px 18px;
-      background: #fbfcfb;
+      background: #fff7f0;
       border-radius: 0 0 8px 8px;
     }
 
@@ -679,9 +693,9 @@
 
     .done {
       display: none;
-      border-color: #b9ded5;
+      border-color: #ffd2b2;
       background: var(--accent-soft);
-      color: #0f5d53;
+      color: #a94300;
       font-weight: 700;
     }
 
@@ -929,6 +943,16 @@
       }
 
       if (question.type === 'reference_autocomplete') {
+        if (question.code === 'manager_full_name') {
+          return `
+            <div class="field auto-only" data-code="${escapeHtml(question.code)}" data-type="${escapeHtml(effectiveType)}" data-original-type="${escapeHtml(question.type)}" data-group="${groupAttr}" data-reference="${escapeHtml(question.optionSet)}" data-required="${question.required}">
+              <label>${escapeHtml(question.text)}${requiredMark}</label>
+              <input data-input="${escapeHtml(question.code)}" readonly tabindex="-1">
+              ${hint}
+              <div class="error">Заполните все поля подсвеченные красным</div>
+            </div>
+          `;
+        }
         const storeDetails = question.code === 'store_network_address'
           ? `
             <div class="auto-details" data-store-details>
@@ -1000,8 +1024,13 @@
           if (field.dataset.type === 'reference_autocomplete') {
             delete state.referenceLabels[code];
             const selectedRef = field.querySelector('.selected-ref');
-            selectedRef.textContent = '';
-            selectedRef.classList.remove('show');
+            if (selectedRef) {
+              selectedRef.textContent = '';
+              selectedRef.classList.remove('show');
+            }
+            if (field.dataset.reference === 'employees') {
+              clearEmployeeManager();
+            }
             if (field.dataset.reference === 'stores') {
               updateStoreDetails(field, {});
             }
@@ -1014,6 +1043,7 @@
           }
           updateCapaSummary();
           validateBusinessRules(true);
+          updateCompletionStates();
           saveDraftSoon();
         });
       });
@@ -1166,6 +1196,7 @@
               );
               field.classList.remove('invalid');
               input.value = '';
+              updateFieldCompletion(field);
               saveDraftSoon();
             } catch (error) {
               state.answers[code] = existingUrls.concat(urls);
@@ -1186,6 +1217,7 @@
                 code
               );
               field.classList.toggle('invalid', !urls.length);
+              updateFieldCompletion(field);
               saveDraftSoon();
             }
           } catch (error) {
@@ -1196,6 +1228,7 @@
             state.fileUploads[code] = { uploading: false, uploaded: false };
             renderFileStatus(fileList, 'Не удалось прочитать файл. Попробуйте выбрать фото еще раз.', [], [], -1, 'error');
             field.classList.add('invalid');
+            updateFieldCompletion(field);
           }
         });
       });
@@ -1263,6 +1296,7 @@
             fileList.className = 'file-list';
             field.classList.remove('invalid');
           }
+          updateFieldCompletion(field);
           saveDraftSoon();
         });
       });
@@ -1288,6 +1322,7 @@
           field.classList.remove('invalid');
           delete field.dataset.businessInvalid;
           applyConditionalVisibility();
+          updateCompletionStates();
           saveDraftSoon();
         });
       });
@@ -1388,12 +1423,14 @@
             address: button.dataset.address || '',
           };
           const selectedRef = field.querySelector('.selected-ref');
-          if (field.dataset.reference === 'employees' || field.dataset.reference === 'stores') {
-            selectedRef.textContent = '';
-            selectedRef.classList.remove('show');
-          } else {
-            selectedRef.textContent = button.dataset.extra || '';
-            selectedRef.classList.toggle('show', Boolean(button.dataset.extra));
+          if (selectedRef) {
+            if (field.dataset.reference === 'employees' || field.dataset.reference === 'stores') {
+              selectedRef.textContent = '';
+              selectedRef.classList.remove('show');
+            } else {
+              selectedRef.textContent = button.dataset.extra || '';
+              selectedRef.classList.toggle('show', Boolean(button.dataset.extra));
+            }
           }
           field.classList.remove('invalid');
           box.classList.remove('open');
@@ -1406,6 +1443,7 @@
               address: button.dataset.address || '',
             });
           }
+          updateCompletionStates();
           saveDraftSoon();
         });
       });
@@ -1433,7 +1471,10 @@
 
     function applyEmployeeManager(managerName) {
       const manager = String(managerName || '').trim();
-      if (!manager) return;
+      if (!manager) {
+        clearEmployeeManager();
+        return;
+      }
 
       const field = document.querySelector('.field[data-code="manager_full_name"]');
       if (!field) return;
@@ -1448,6 +1489,7 @@
       };
 
       input.value = managerItem.label;
+      field.classList.add('show');
       state.answers.manager_full_name = managerItem.label;
       state.referenceLabels.manager_full_name = {
         id: managerItem.id,
@@ -1456,9 +1498,23 @@
         fromEmployeeReference: Boolean(managerItem.fromEmployeeReference),
       };
 
-      selectedRef.textContent = '';
-      selectedRef.classList.remove('show');
+      if (selectedRef) {
+        selectedRef.textContent = '';
+        selectedRef.classList.remove('show');
+      }
       field.classList.remove('invalid');
+      updateCompletionStates();
+    }
+
+    function clearEmployeeManager() {
+      const field = document.querySelector('.field[data-code="manager_full_name"]');
+      if (!field) return;
+
+      const input = field.querySelector('input');
+      if (input) input.value = '';
+      delete state.answers.manager_full_name;
+      delete state.referenceLabels.manager_full_name;
+      field.classList.remove('show', 'invalid', 'complete');
     }
 
     function syncSelectedEmployeeManager() {
@@ -1504,6 +1560,7 @@
       els.nextBtn.textContent = safeIndex === sections.length - 1 ? 'Отправить' : 'Далее';
       updateCapaSummary();
       validateBusinessRules(false);
+      updateCompletionStates();
       if (shouldSave) saveDraftSoon();
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
@@ -1513,6 +1570,7 @@
       let ok = true;
 
       section.querySelectorAll('.field').forEach((field) => {
+        if (field.classList.contains('auto-only') && !field.classList.contains('show')) return;
         const code = field.dataset.code;
         const required = field.dataset.required === 'true';
         if (!required) return;
@@ -1531,11 +1589,44 @@
         }
 
         field.classList.toggle('invalid', invalid);
+        updateFieldCompletion(field);
         if (invalid) ok = false;
       });
 
       if (!validateBusinessRules(true, section)) ok = false;
+      updateCompletionStates(section);
       return ok;
+    }
+
+    function updateCompletionStates(root = document) {
+      root.querySelectorAll('.field').forEach(updateFieldCompletion);
+    }
+
+    function updateFieldCompletion(field) {
+      if (!field || field.classList.contains('hidden-by-answer')) {
+        if (field) field.classList.remove('complete');
+        return;
+      }
+
+      if (field.classList.contains('auto-only') && !field.classList.contains('show')) {
+        field.classList.remove('complete');
+        return;
+      }
+
+      const code = field.dataset.code;
+      const value = state.answers[code];
+      let complete = Array.isArray(value) ? value.length > 0 : Boolean(String(value || '').trim());
+
+      if (complete && field.dataset.type === 'reference_autocomplete') {
+        const selected = state.referenceLabels[code];
+        complete = Boolean(selected && selected.label === value);
+      }
+
+      if (complete && field.dataset.type === 'photo') {
+        complete = Array.isArray(value) && value.length > 0 && !(state.fileUploads[code] && state.fileUploads[code].uploading);
+      }
+
+      field.classList.toggle('complete', complete && !field.classList.contains('invalid') && field.dataset.businessInvalid !== 'true');
     }
 
     function validateBusinessRules(mark = false, root = document) {
@@ -2243,6 +2334,10 @@
         if (field.dataset.type === 'reference_autocomplete') {
           const selected = state.referenceLabels[code];
           const selectedRef = field.querySelector('.selected-ref');
+          if (field.classList.contains('auto-only') && value) {
+            field.classList.add('show');
+          }
+          if (!selectedRef) return;
           if (field.dataset.reference === 'employees') {
             selectedRef.textContent = '';
             selectedRef.classList.remove('show');
@@ -2261,6 +2356,7 @@
       applyConditionalVisibility();
       updateCapaSummary();
       validateBusinessRules(false);
+      updateCompletionStates();
     }
 
     function getEffectiveQuestionType(question) {
@@ -2302,7 +2398,6 @@
 
         summary.classList.add('show');
         summary.innerHTML = `
-          <div class="capa-summary-title">CAPA магазина</div>
           <div class="capa-summary-table-wrap">
             <table class="capa-summary-table">
               <thead>
