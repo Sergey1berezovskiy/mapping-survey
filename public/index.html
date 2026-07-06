@@ -317,10 +317,6 @@
       color: var(--danger);
     }
 
-    .capa-summary-mobile {
-      display: none;
-    }
-
     .capa-summary-item {
       border: 1px solid rgba(169, 67, 0, 0.16);
       border-radius: 8px;
@@ -351,53 +347,38 @@
       }
 
       .capa-summary-table-wrap {
-        display: none;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
       }
 
-      .capa-summary-mobile {
-        display: grid;
-        gap: 5px;
-      }
-
-      .capa-mobile-row {
-        display: grid;
-        grid-template-columns: 58px repeat(var(--capa-cols, 4), minmax(38px, 1fr));
-        gap: 3px;
-        align-items: stretch;
-      }
-
-      .capa-mobile-cell {
+      .capa-summary-table {
         min-width: 0;
-        border: 1px solid rgba(169, 67, 0, 0.12);
-        border-radius: 6px;
-        background: rgba(255, 255, 255, 0.56);
-        padding: 4px 3px;
+        width: max-content;
+        max-width: none;
+        font-size: 10px;
+      }
+
+      .capa-summary-table th,
+      .capa-summary-table td {
+        padding: 4px 5px;
+        white-space: normal;
+        overflow-wrap: anywhere;
+        line-height: 1.12;
+      }
+
+      .capa-summary-table th {
+        max-width: 72px;
+      }
+
+      .capa-summary-table th:first-child,
+      .capa-summary-table td:first-child {
+        min-width: 66px;
+        max-width: 72px;
+      }
+
+      .capa-summary-table td {
+        min-width: 54px;
         text-align: center;
-      }
-
-      .capa-mobile-brand {
-        text-align: left;
-        font-weight: 800;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-
-      .capa-mobile-label {
-        display: block;
-        color: var(--muted);
-        font-size: 9px;
-        line-height: 1.05;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
-
-      .capa-mobile-value {
-        display: block;
-        margin-top: 2px;
-        font-weight: 800;
-        font-size: 11px;
       }
     }
 
@@ -2556,11 +2537,6 @@
         }
 
         summary.classList.add('show');
-        const mobileRows = [
-          { brand: 'CAPA', values: matrix.capa },
-          ...matrix.brandRows,
-          { brand: 'Другое', values: matrix.other, isOther: true },
-        ];
         summary.innerHTML = `
           <div class="capa-summary-table-wrap">
             <table class="capa-summary-table">
@@ -2595,23 +2571,6 @@
                 </tr>
               </tbody>
             </table>
-          </div>
-          <div class="capa-summary-mobile" style="--capa-cols: ${Math.max(matrix.categories.length, 1)}">
-            ${mobileRows.map((row) => `
-              <div class="capa-mobile-row">
-                <div class="capa-mobile-cell capa-mobile-brand">${escapeHtml(row.brand)}</div>
-                ${matrix.categories.map((category) => {
-                  const value = row.values[category.key];
-                  const over = row.isOther && typeof value === 'number' && value < 0;
-                  return `
-                    <div class="capa-mobile-cell ${over ? 'capa-summary-over' : ''}">
-                      <span class="capa-mobile-label">${escapeHtml(category.label)}</span>
-                      <span class="capa-mobile-value">${formatSummaryNumber(value)}</span>
-                    </div>
-                  `;
-                }).join('')}
-              </div>
-            `).join('')}
           </div>
         `;
       });
