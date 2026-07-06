@@ -36,8 +36,16 @@ const RESULT_BASE_HEADERS = [
   'Сотрудник',
   'Руководитель',
   'Магазин/ТТ',
+  'Канал',
+  'Адрес',
   'Статус',
 ];
+
+const RESULT_SKIPPED_QUESTION_CODES = new Set([
+  'employee_full_name',
+  'manager_full_name',
+  'store_network_address',
+]);
 
 const GOOGLE_API_SCOPES = [
   'https://www.googleapis.com/auth/drive',
@@ -191,6 +199,7 @@ async function uploadQuestionFilesToDrive(params) {
       id: driveFile.id,
       url: driveFile.webViewLink || `https://drive.google.com/file/d/${driveFile.id}/view`,
       name: file.name || safeName,
+      driveName: driveFile.name || safeName,
       size: buffer.length,
     });
   }
@@ -599,11 +608,14 @@ async function submitSurveyToSheets(payload) {
     'Сотрудник': meta.employee || '',
     'Руководитель': meta.manager || '',
     'Магазин/ТТ': meta.store || '',
+    'Канал': meta.channel || '',
+    'Адрес': meta.address || '',
     'Дата отправки': now,
     'Статус': 'Отправлено',
   };
 
   for (const answer of answers) {
+    if (RESULT_SKIPPED_QUESTION_CODES.has(String(answer && answer.questionCode || ''))) continue;
     const header = getResultAnswerHeader(answer);
     if (!header) continue;
     row[header] = getResultAnswerValue(answer);
@@ -753,12 +765,42 @@ function getResultAnswerHeader(answer) {
 function getResultAnswerValue(answer) {
   if (!answer) return '';
   if (answer.files) {
-    return Array.isArray(answer.files) ? answer.files.join('\n') : answer.files;
+    if (Array.isArray(answer.files)) {
+      const files = answer.files
+        .map(normalizeSubmittedFile)
+        .filter((file) => file.url);
+      return files.length ? buildHyperlinkFormula(files) : '';
+    }
+    const files = String(answer.files)
+      .split(/\n+/)
+      .map((url, index) => ({ url: url.trim(), name: `Фото ${index + 1}` }))
+      .filter((file) => file.url);
+    return files.length ? buildHyperlinkFormula(files) : answer.files;
   }
   if (Array.isArray(answer.selectedOptions)) {
     return answer.selectedOptions.join('; ');
   }
   return answer.value || answer.selectedOptions || '';
+}
+
+function normalizeSubmittedFile(file) {
+  if (typeof file === 'string') {
+    return { url: file, name: file };
+  }
+  return {
+    url: file && (file.url || file.webViewLink) || '',
+    name: file && (file.linkName || file.driveName || file.name) || 'Фото',
+  };
+}
+
+function buildHyperlinkFormula(files) {
+  return `=${files
+    .map((file) => `HYPERLINK("${escapeFormulaString(file.url)}","${escapeFormulaString(file.name)}")`)
+    .join('&CHAR(10)&')}`;
+}
+
+function escapeFormulaString(value) {
+  return String(value || '').replace(/"/g, '""');
 }
 
 async function appendSheetValues(sheetName, values) {

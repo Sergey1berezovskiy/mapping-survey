@@ -2045,10 +2045,13 @@
       els.status.textContent = 'Отправка';
 
       const questionsByCode = Object.fromEntries(state.config.questions.map((question) => [question.code, question]));
+      const selectedStore = state.referenceLabels.store_network_address || {};
       const meta = {
         employee: state.answers.employee_full_name || '',
         manager: state.answers.manager_full_name || '',
         store: state.answers.store_network_address || '',
+        channel: selectedStore.channel || '',
+        address: selectedStore.address || '',
       };
 
       const answers = Object.entries(state.answers)
@@ -2064,7 +2067,7 @@
             type: effectiveType,
             value: Array.isArray(value) ? '' : value,
             selectedOptions: isMultiSelect && Array.isArray(value) ? value : '',
-            files: isPhoto && Array.isArray(value) ? value.join('\n') : (effectiveType === 'url' ? value : ''),
+            files: isPhoto && Array.isArray(value) ? buildSubmittedPhotoFiles(code, value) : (effectiveType === 'url' ? value : ''),
           };
         });
 
@@ -2384,6 +2387,21 @@
       const code = String(questionCode || '').toLowerCase();
       if (code === 'photos_bz_xiaomi' || code.includes('xiaomi')) return 'Xiaomi';
       if (code === 'photos_bz_other_vendors' || code.includes('other') || code.includes('vendor')) return 'Конкуренты';
+      return 'Фото';
+    }
+
+    function buildSubmittedPhotoFiles(questionCode, urls) {
+      const baseName = getPhotoSheetLinkBaseName(questionCode);
+      return urls.map((url, index) => ({
+        url,
+        linkName: `${baseName} ${index + 1}`,
+      }));
+    }
+
+    function getPhotoSheetLinkBaseName(questionCode) {
+      const blockName = getPhotoBlockName(questionCode);
+      if (blockName === 'Xiaomi') return 'BZ Xiaomi';
+      if (blockName === 'Конкуренты') return 'BZ Конкуренты';
       return 'Фото';
     }
 
