@@ -2084,10 +2084,11 @@
         address: selectedStore.address || '',
       };
 
-      const answers = Object.entries(state.answers)
-        .filter(([code]) => questionsByCode[code])
-        .map(([code, value]) => {
-          const question = questionsByCode[code];
+      const answers = state.config.questions
+        .filter((question) => Object.prototype.hasOwnProperty.call(state.answers, question.code))
+        .map((question) => {
+          const code = question.code;
+          const value = state.answers[code];
           const effectiveType = getEffectiveQuestionType(question);
           const isPhoto = effectiveType === 'photo';
           const isMultiSelect = effectiveType === 'multi_select';
@@ -2926,7 +2927,9 @@
 
       if (!isSelectedStoreTcr()) return;
 
-      document.querySelectorAll('.section[data-section-code="promoters"] .field').forEach(hideFieldByStoreRule);
+      document.querySelectorAll('.section[data-section-code="promoters"] .field').forEach((field) => {
+        if (!isBaVisitField(field)) hideFieldByStoreRule(field);
+      });
       document.querySelectorAll('.field').forEach((field) => {
         const question = getQuestionByCode(field.dataset.code);
         if (!question) return;

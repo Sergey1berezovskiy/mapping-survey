@@ -25,7 +25,7 @@ const googleOauthClientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET || '';
 const googleOauthRefreshToken = process.env.GOOGLE_OAUTH_REFRESH_TOKEN || '';
 const jsonLimitBytes = Number(process.env.JSON_LIMIT_BYTES || 200 * 1024 * 1024);
 const upstreamTimeoutMs = Number(process.env.UPSTREAM_TIMEOUT_MS || 120000);
-const serviceVersion = 'railway-survey-2026-07-06-store-channel-rms';
+const serviceVersion = 'railway-survey-2026-07-06-ordered-result-columns';
 const cacheTtlMs = Number(process.env.API_CACHE_TTL_MS || 5 * 60 * 1000);
 const apiCache = new Map();
 let driveAccessToken = null;
@@ -646,11 +646,8 @@ async function appendResultRow(row) {
   await ensureResultsSheet();
 
   const existingHeaders = await getSheetHeaders(resultsSheetName);
-  const nextHeaders = mergeHeaders(existingHeaders, Object.keys(row));
-  if (nextHeaders.length !== existingHeaders.length) {
-    await writeSheetHeaders(resultsSheetName, nextHeaders);
-    apiCache.set(getSheetHeadersCacheKey(resultsSheetName), { savedAt: Date.now(), payload: nextHeaders });
-  }
+  const desiredHeaders = mergeHeaders([], Object.keys(row));
+  const nextHeaders = await ensureHeadersInDesiredOrder(resultsSheetName, existingHeaders, desiredHeaders);
 
   const appendPayload = await appendSheetValues(resultsSheetName, [nextHeaders.map((header) => getCellTextValue(row[header]))]);
   const rowNumber = getAppendedRowNumber(appendPayload);
@@ -776,6 +773,56 @@ function mergeHeaders(existingHeaders, rowHeaders) {
     if (header && !merged.includes(header)) merged.push(header);
   }
   return merged;
+}
+
+async function ensureHeadersInDesiredOrder(sheetName, existingHeaders, desiredHeaders) {
+  if (!existingHeaders.length) {
+    await writeSheetHeaders(sheetName, desiredHeaders);
+    apiCache.set(getSheetHeadersCacheKey(sheetName), { savedAt: Date.now(), payload: desiredHeaders });
+    return desiredHeaders;
+  }
+
+  const headers = [...existingHeaders];
+  const missingHeaders = desiredHeaders.filter((header) => header && !headers.includes(header));
+
+  if (!missingHeaders.length) {
+    return headers;
+  }
+
+  const sheetId = await getSheetIdByName(sheetName);
+  const requests = [];
+
+  for (const header of missingHeaders) {
+    const insertIndex = findHeaderInsertIndex(headers, desiredHeaders, header);
+    requests.push({
+      insertDimension: {
+        range: {
+          sheetId,
+          dimension: 'COLUMNS',
+          startIndex: insertIndex,
+          endIndex: insertIndex + 1,
+        },
+        inheritFromBefore: insertIndex > 0,
+      },
+    });
+    headers.splice(insertIndex, 0, header);
+  }
+
+  await batchUpdateSpreadsheet(requests);
+  await writeSheetHeaders(sheetName, headers);
+  apiCache.set(getSheetHeadersCacheKey(sheetName), { savedAt: Date.now(), payload: headers });
+  return headers;
+}
+
+function findHeaderInsertIndex(currentHeaders, desiredHeaders, header) {
+  const desiredIndex = desiredHeaders.indexOf(header);
+  for (let index = 0; index < currentHeaders.length; index += 1) {
+    const currentDesiredIndex = desiredHeaders.indexOf(currentHeaders[index]);
+    if (currentDesiredIndex > desiredIndex) {
+      return index;
+    }
+  }
+  return currentHeaders.length;
 }
 
 function getResultAnswerHeader(answer) {
