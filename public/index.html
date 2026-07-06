@@ -277,6 +277,19 @@
       display: block;
     }
 
+    .capa-summary-anchor.capa-fixed {
+      min-height: var(--capa-fixed-height, 0px);
+    }
+
+    .capa-summary.is-desktop-fixed {
+      position: fixed;
+      top: 8px;
+      left: var(--capa-fixed-left, 8px);
+      width: var(--capa-fixed-width, auto);
+      margin: 0;
+      z-index: 16;
+    }
+
     .capa-summary-grid {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
@@ -317,13 +330,21 @@
       font-weight: 800;
     }
 
+    .capa-summary-value-ok {
+      color: #12633f;
+    }
+
+    .capa-summary-value-empty {
+      color: var(--muted);
+    }
+
     .capa-summary-table tr:last-child th,
     .capa-summary-table tr:last-child td {
       border-bottom: 0;
     }
 
     .capa-summary-over {
-      color: var(--danger);
+      color: var(--danger) !important;
     }
 
     .capa-summary-item {
@@ -358,10 +379,6 @@
         box-shadow: 0 6px 14px rgba(89, 43, 9, 0.12);
         transform: translateZ(0);
         will-change: transform;
-      }
-
-      .capa-summary-anchor.capa-fixed {
-        min-height: var(--capa-fixed-height, 0px);
       }
 
       .capa-summary.is-fixed {
@@ -2087,7 +2104,7 @@
     window.addEventListener('beforeunload', saveDraft);
     window.addEventListener('scroll', updateCapaPinning, { passive: true });
     window.addEventListener('resize', () => {
-      if (!window.matchMedia('(max-width: 640px)').matches) resetMobileCapaPinning();
+      resetCapaPinning();
       updateCapaPinning();
     });
     els.newSurveyTopBtn.addEventListener('click', startNewSurvey);
@@ -2610,7 +2627,7 @@
               <tbody>
                 <tr>
                   <th>CAPA магазина</th>
-                  ${matrix.categories.map((category) => `<td>${formatSummaryNumber(matrix.capa[category.key])}</td>`).join('')}
+                  ${matrix.categories.map((category) => renderSummaryCell(matrix.capa[category.key])).join('')}
                 </tr>
                 ${matrix.brandRows.map((row) => `
                   <tr>
@@ -2618,7 +2635,7 @@
                     ${matrix.categories.map((category) => {
                       const value = row.values[category.key];
                       const over = isBrandCategoryOverCapa(category, value);
-                      return `<td class="${over ? 'capa-summary-over' : ''}">${formatSummaryNumber(value)}</td>`;
+                      return renderSummaryCell(value, over);
                     }).join('')}
                   </tr>
                 `).join('')}
@@ -2627,7 +2644,7 @@
                   ${matrix.categories.map((category) => {
                     const value = matrix.other[category.key];
                     const over = typeof value === 'number' && value < 0;
-                    return `<td class="${over ? 'capa-summary-over' : ''}">${formatSummaryNumber(value)}</td>`;
+                    return renderSummaryCell(value, over);
                   }).join('')}
                 </tr>
               </tbody>
@@ -2645,11 +2662,12 @@
       const summary = anchor.querySelector('[data-capa-summary]');
       if (!summary || !summary.classList.contains('show')) return;
 
-      if (!window.matchMedia('(max-width: 640px)').matches) {
-        return;
-      }
+      const isMobile = window.matchMedia('(max-width: 640px)').matches;
+      const fixedClass = isMobile ? 'is-fixed' : 'is-desktop-fixed';
+      const otherFixedClass = isMobile ? 'is-desktop-fixed' : 'is-fixed';
+      summary.classList.remove(otherFixedClass);
 
-      if (!summary.classList.contains('is-fixed')) {
+      if (!summary.classList.contains(fixedClass)) {
         anchor.dataset.capaTop = String(anchor.getBoundingClientRect().top + window.scrollY);
       }
 
@@ -2661,18 +2679,20 @@
 
       const shouldFix = window.scrollY >= Number(anchor.dataset.capaTop || 0);
       anchor.classList.toggle('capa-fixed', shouldFix);
-      summary.classList.toggle('is-fixed', shouldFix);
+      summary.classList.toggle(fixedClass, shouldFix);
     }
 
-    function resetMobileCapaPinning() {
+    function resetCapaPinning() {
       document.querySelectorAll('[data-capa-anchor]').forEach((anchor) => {
         anchor.classList.remove('capa-fixed');
+        delete anchor.dataset.capaTop;
         anchor.style.removeProperty('--capa-fixed-height');
         anchor.style.removeProperty('--capa-fixed-left');
         anchor.style.removeProperty('--capa-fixed-width');
       });
       document.querySelectorAll('[data-capa-summary]').forEach((summary) => {
         summary.classList.remove('is-fixed');
+        summary.classList.remove('is-desktop-fixed');
       });
     }
 
@@ -2705,6 +2725,14 @@
 
     function formatSummaryNumber(value) {
       return value === null || value === undefined ? '-' : escapeHtml(value);
+    }
+
+    function renderSummaryCell(value, isOver = false) {
+      const isEmpty = value === null || value === undefined;
+      const className = isOver
+        ? 'capa-summary-over'
+        : (isEmpty ? 'capa-summary-value-empty' : 'capa-summary-value-ok');
+      return `<td class="${className}">${formatSummaryNumber(value)}</td>`;
     }
 
     function isBrandCategoryOverCapa(category, value) {
