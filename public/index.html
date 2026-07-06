@@ -1562,6 +1562,14 @@
       }
 
       if (isHeicFile(file)) {
+        if ((file.size || 0) <= TARGET_IMAGE_BYTES) {
+          return readOriginalImagePayload(
+            file,
+            buildPhotoFileName(storePrefix, photoNumber, getImageExtension(file), questionCode),
+            file.name || `photo_${photoNumber}.heic`
+          );
+        }
+
         try {
           const converted = await convertHeicToJpegBlob(file);
           return resizeImageBlob(
@@ -1570,21 +1578,11 @@
             file.name || `photo_${photoNumber}.heic`
           );
         } catch (error) {
-          await waitForBrowser(350);
-          try {
-            const converted = await convertHeicToJpegBlob(file);
-            return resizeImageBlob(
-              converted,
-              buildPhotoFileName(storePrefix, photoNumber, 'jpg', questionCode),
-              file.name || `photo_${photoNumber}.heic`
-            );
-          } catch (retryError) {
-            return readOriginalImagePayload(
-              file,
-              buildPhotoFileName(storePrefix, photoNumber, getImageExtension(file), questionCode),
-              file.name || `photo_${photoNumber}.heic`
-            );
-          }
+          return readOriginalImagePayload(
+            file,
+            buildPhotoFileName(storePrefix, photoNumber, getImageExtension(file), questionCode),
+            file.name || `photo_${photoNumber}.heic`
+          );
         }
       }
 
