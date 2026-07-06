@@ -367,10 +367,10 @@
       .capa-summary.is-fixed {
         position: fixed;
         top: 0;
-        left: 8px;
-        right: 8px;
-        width: auto;
-        margin: 0 auto;
+        left: var(--capa-fixed-left, 8px);
+        right: auto;
+        width: var(--capa-fixed-width, calc(100vw - 16px));
+        margin: 0;
         border-top-left-radius: 0;
         border-top-right-radius: 0;
       }
@@ -2086,7 +2086,10 @@
 
     window.addEventListener('beforeunload', saveDraft);
     window.addEventListener('scroll', updateCapaPinning, { passive: true });
-    window.addEventListener('resize', updateCapaPinning);
+    window.addEventListener('resize', () => {
+      if (!window.matchMedia('(max-width: 640px)').matches) resetMobileCapaPinning();
+      updateCapaPinning();
+    });
     els.newSurveyTopBtn.addEventListener('click', startNewSurvey);
 
     function groupBy(items, key) {
@@ -2643,9 +2646,6 @@
       if (!summary || !summary.classList.contains('show')) return;
 
       if (!window.matchMedia('(max-width: 640px)').matches) {
-        anchor.classList.remove('capa-fixed');
-        summary.classList.remove('is-fixed');
-        anchor.style.removeProperty('--capa-fixed-height');
         return;
       }
 
@@ -2654,11 +2654,26 @@
       }
 
       const fixedHeight = Math.ceil(summary.offsetHeight);
+      const anchorRect = anchor.getBoundingClientRect();
       anchor.style.setProperty('--capa-fixed-height', `${fixedHeight}px`);
+      anchor.style.setProperty('--capa-fixed-left', `${Math.round(anchorRect.left)}px`);
+      anchor.style.setProperty('--capa-fixed-width', `${Math.round(anchorRect.width)}px`);
 
       const shouldFix = window.scrollY >= Number(anchor.dataset.capaTop || 0);
       anchor.classList.toggle('capa-fixed', shouldFix);
       summary.classList.toggle('is-fixed', shouldFix);
+    }
+
+    function resetMobileCapaPinning() {
+      document.querySelectorAll('[data-capa-anchor]').forEach((anchor) => {
+        anchor.classList.remove('capa-fixed');
+        anchor.style.removeProperty('--capa-fixed-height');
+        anchor.style.removeProperty('--capa-fixed-left');
+        anchor.style.removeProperty('--capa-fixed-width');
+      });
+      document.querySelectorAll('[data-capa-summary]').forEach((summary) => {
+        summary.classList.remove('is-fixed');
+      });
     }
 
     function getCapaSummaryMatrix() {
