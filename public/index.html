@@ -1107,7 +1107,11 @@
           const removeAll = Boolean(button.dataset.removeAllFiles);
           const code = button.dataset.removeFiles || button.dataset.removeAllFiles;
           const field = button.closest('.field');
-          const currentFilesCount = Array.isArray(state.answers[code]) ? state.answers[code].length : 0;
+          const ids = Array.isArray(state.fileIds[code]) ? state.fileIds[code] : [];
+          const urls = Array.isArray(state.answers[code]) ? state.answers[code] : [];
+          const names = Array.isArray(state.fileNames[code]) ? state.fileNames[code] : [];
+          const sizes = Array.isArray(state.fileSizes[code]) ? state.fileSizes[code] : [];
+          const currentFilesCount = Math.max(urls.length, ids.length, names.length, sizes.length);
           const selectedIndexes = removeAll
             ? Array.from({ length: currentFilesCount }, (_, index) => index)
             : [...fileList.querySelectorAll('[data-remove-file-index]:checked')]
@@ -1117,8 +1121,10 @@
           if (!selectedIndexes.length) return;
 
           const removeSet = new Set(selectedIndexes);
-          const ids = Array.isArray(state.fileIds[code]) ? state.fileIds[code] : [];
-          button.disabled = true;
+          const actionButtons = [...fileList.querySelectorAll('[data-remove-files], [data-remove-all-files]')];
+          actionButtons.forEach((actionButton) => {
+            actionButton.disabled = true;
+          });
           button.textContent = 'Удаляем...';
 
           try {
@@ -1127,7 +1133,9 @@
               .filter(Boolean)
               .map((fileId) => apiCall('deleteQuestionFile', { fileId })));
           } catch (error) {
-            button.disabled = false;
+            actionButtons.forEach((actionButton) => {
+              actionButton.disabled = false;
+            });
             button.textContent = removeAll ? 'Удалить все фото' : 'Удалить выбранные';
             renderFileStatus(
               fileList,
@@ -1142,13 +1150,10 @@
             return;
           }
 
-          state.answers[code] = (Array.isArray(state.answers[code]) ? state.answers[code] : [])
-            .filter((_, index) => !removeSet.has(index));
+          state.answers[code] = urls.filter((_, index) => !removeSet.has(index));
           state.fileIds[code] = ids.filter((_, index) => !removeSet.has(index));
-          state.fileNames[code] = (Array.isArray(state.fileNames[code]) ? state.fileNames[code] : [])
-            .filter((_, index) => !removeSet.has(index));
-          state.fileSizes[code] = (Array.isArray(state.fileSizes[code]) ? state.fileSizes[code] : [])
-            .filter((_, index) => !removeSet.has(index));
+          state.fileNames[code] = names.filter((_, index) => !removeSet.has(index));
+          state.fileSizes[code] = sizes.filter((_, index) => !removeSet.has(index));
 
           if (state.answers[code].length) {
             renderFileStatus(fileList, `Загружено файлов: ${state.answers[code].length}`, state.fileNames[code], state.fileSizes[code], -1, 'uploaded', true, code);
