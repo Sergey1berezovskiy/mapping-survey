@@ -1509,6 +1509,13 @@
               file.name || `photo_${photoNumber}.heic`
             );
           } catch (retryError) {
+            if ((file.size || 0) <= TARGET_IMAGE_BYTES) {
+              return readOriginalImagePayload(
+                file,
+                buildPhotoFileName(storePrefix, photoNumber, getImageExtension(file), questionCode),
+                file.name || `photo_${photoNumber}.heic`
+              );
+            }
             throw new Error('Не удалось сжать HEIC. Попробуйте выбрать меньше HEIC за раз или пересохранить фото как JPG.');
           }
         }
@@ -1523,6 +1530,25 @@
         buildPhotoFileName(storePrefix, photoNumber, 'jpg', questionCode),
         file.name || `photo_${photoNumber}.jpg`
       );
+    }
+
+    function readOriginalImagePayload(file, driveName, displayName) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(reader.error);
+        reader.onload = () => {
+          const mimeType = getImageMimeType(file);
+          const base64 = String(reader.result || '').split(',').pop() || '';
+          resolve({
+            name: displayName,
+            driveName,
+            mimeType,
+            data: `data:${mimeType};base64,${base64}`,
+            size: file.size || dataUrlSize(reader.result),
+          });
+        };
+        reader.readAsDataURL(file);
+      });
     }
 
     function resizeImageBlob(blob, driveName, displayName) {
