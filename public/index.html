@@ -252,7 +252,8 @@
       display: block;
     }
 
-    .field.hidden-by-answer {
+    .field.hidden-by-answer,
+    .field.hidden-by-store {
       display: none;
     }
 
@@ -1075,8 +1076,16 @@
           ? `
             <div class="auto-details" data-store-details>
               <label class="auto-field">
+                <span>RMS Store Code</span>
+                <input data-store-rms readonly tabindex="-1">
+              </label>
+              <label class="auto-field">
                 <span>Канал</span>
                 <input data-store-channel readonly tabindex="-1">
+              </label>
+              <label class="auto-field">
+                <span>Channel</span>
+                <input data-store-channel-type readonly tabindex="-1">
               </label>
               <label class="auto-field">
                 <span>Адрес</span>
@@ -1492,7 +1501,15 @@
 
       return items
         .filter((item) => {
-          const haystack = item.normalizedSearch || normalizeSearchText([item.search, item.label, item.extra].filter(Boolean).join(' '));
+          const haystack = item.normalizedSearch || normalizeSearchText([
+            item.search,
+            item.label,
+            item.extra,
+            item.channel,
+            item.storeChannel,
+            item.rmsStoreCode,
+            item.address,
+          ].filter(Boolean).join(' '));
           return tokens.every((token) => haystack.includes(token));
         })
         .slice(0, 10);
@@ -1518,7 +1535,7 @@
       box.innerHTML = items.map((item) => {
         const manager = item.manager || extractManagerFromExtra(item.extra);
         return `
-        <button type="button" data-id="${escapeHtml(item.id)}" data-label="${escapeHtml(item.label)}" data-extra="${escapeHtml(item.extra || '')}" data-manager="${escapeHtml(manager)}" data-channel="${escapeHtml(item.channel || '')}" data-address="${escapeHtml(item.address || item.extra || '')}">
+        <button type="button" data-id="${escapeHtml(item.id)}" data-label="${escapeHtml(item.label)}" data-extra="${escapeHtml(item.extra || '')}" data-manager="${escapeHtml(manager)}" data-channel="${escapeHtml(item.channel || '')}" data-store-channel="${escapeHtml(item.storeChannel || item.channelType || '')}" data-rms-store-code="${escapeHtml(item.rmsStoreCode || item.rms || '')}" data-address="${escapeHtml(item.address || item.extra || '')}">
           ${escapeHtml(item.label)}
           ${item.extra ? `<small>${escapeHtml(item.extra)}</small>` : ''}
         </button>
@@ -1539,6 +1556,8 @@
             extra: button.dataset.extra || '',
             manager,
             channel: button.dataset.channel || '',
+            storeChannel: button.dataset.storeChannel || '',
+            rmsStoreCode: button.dataset.rmsStoreCode || '',
             address: button.dataset.address || '',
           };
           const selectedRef = field.querySelector('.selected-ref');
@@ -1558,9 +1577,12 @@
           }
           if (field.dataset.reference === 'stores') {
             updateStoreDetails(field, {
+              rmsStoreCode: button.dataset.rmsStoreCode || '',
               channel: button.dataset.channel || '',
+              storeChannel: button.dataset.storeChannel || '',
               address: button.dataset.address || '',
             });
+            applyConditionalVisibility();
           }
           updateCompletionStates();
           saveDraftSoon();
@@ -1573,13 +1595,19 @@
       if (!box) return;
 
       const channelInput = box.querySelector('[data-store-channel]');
+      const rmsInput = box.querySelector('[data-store-rms]');
+      const channelTypeInput = box.querySelector('[data-store-channel-type]');
       const addressInput = box.querySelector('[data-store-address]');
+      const rmsStoreCode = details && details.rmsStoreCode ? details.rmsStoreCode : '';
       const channel = details && details.channel ? details.channel : '';
+      const storeChannel = details && details.storeChannel ? details.storeChannel : '';
       const address = details && details.address ? details.address : '';
 
+      rmsInput.value = rmsStoreCode;
       channelInput.value = channel;
+      channelTypeInput.value = storeChannel;
       addressInput.textContent = address;
-      box.classList.toggle('show', Boolean(channel || address));
+      box.classList.toggle('show', Boolean(rmsStoreCode || channel || storeChannel || address));
     }
 
     function extractManagerFromExtra(extra) {
@@ -1694,7 +1722,7 @@
         const code = field.dataset.code;
         const required = field.dataset.required === 'true';
         if (!required) return;
-        if (field.classList.contains('hidden-by-answer')) return;
+        if (isFieldHidden(field)) return;
 
         const value = state.answers[code];
         let invalid = Array.isArray(value) ? value.length === 0 : !String(value || '').trim();
@@ -1723,7 +1751,7 @@
     }
 
     function updateFieldCompletion(field) {
-      if (!field || field.classList.contains('hidden-by-answer')) {
+      if (!field || isFieldHidden(field)) {
         if (field) field.classList.remove('complete');
         return;
       }
@@ -1755,7 +1783,7 @@
       let ok = true;
 
       activeRoot.querySelectorAll('.field[data-type="number"]').forEach((field) => {
-        if (field.classList.contains('hidden-by-answer')) return;
+        if (isFieldHidden(field)) return;
 
         const code = field.dataset.code;
         const question = getQuestionByCode(code);
@@ -1801,7 +1829,7 @@
       categoryQuestions.forEach((categoryQuestion) => {
         const brand = categoryQuestion.group;
         const allCategoryField = document.querySelector(`.field[data-code="${cssEscape(categoryQuestion.code)}"]`);
-        if (!allCategoryField || allCategoryField.classList.contains('hidden-by-answer')) return;
+        if (!allCategoryField || isFieldHidden(allCategoryField)) return;
 
         const typeQuestion = findBrandZoneQuestion(brand, 'bz_types_');
         const totalQuestion = findBrandZoneQuestion(brand, 'bz_total_');
@@ -1914,7 +1942,7 @@
         const fieldsInRoot = group.questions
           .map((question) => root.querySelector(`.field[data-code="${cssEscape(question.code)}"]`))
           .filter(Boolean)
-          .filter((field) => !field.classList.contains('hidden-by-answer'));
+          .filter((field) => !isFieldHidden(field));
 
         if (!fieldsInRoot.length) return;
 
@@ -1967,7 +1995,7 @@
         const fieldsInRoot = questions
           .map((question) => root.querySelector(`.field[data-code="${cssEscape(question.code)}"]`))
           .filter(Boolean)
-          .filter((field) => !field.classList.contains('hidden-by-answer'));
+          .filter((field) => !isFieldHidden(field));
 
         if (!fieldsInRoot.length) return;
 
@@ -2050,7 +2078,9 @@
         employee: state.answers.employee_full_name || '',
         manager: state.answers.manager_full_name || '',
         store: state.answers.store_network_address || '',
+        rmsStoreCode: selectedStore.rmsStoreCode || '',
         channel: selectedStore.channel || '',
+        storeChannel: selectedStore.storeChannel || '',
         address: selectedStore.address || '',
       };
 
@@ -2379,14 +2409,23 @@
     }
 
     function buildPhotoFileName(storePrefix, photoNumber, extension, questionCode) {
-      const blockName = getPhotoBlockName(questionCode);
+      const blockName = getPhotoBlockName(questionCode, getQuestionByCode(questionCode));
       return `${sanitizeClientFileName(storePrefix || 'Mapping')}_${blockName}_Фото${photoNumber}.${extension || 'jpg'}`;
     }
 
-    function getPhotoBlockName(questionCode) {
+    function getPhotoBlockName(questionCode, question) {
       const code = String(questionCode || '').toLowerCase();
-      if (code === 'photos_bz_xiaomi' || code.includes('xiaomi')) return 'Xiaomi';
-      if (code === 'photos_bz_other_vendors' || code.includes('other') || code.includes('vendor')) return 'Конкуренты';
+      const text = normalizeSearchText(question && question.text || '');
+      if (code === 'photos_bz_xiaomi' || code.includes('xiaomi') || text.includes('xiaomi')) return 'Xiaomi';
+      if (
+        code.includes('other') ||
+        code.includes('vendor') ||
+        code.includes('competitor') ||
+        text.includes('конкур') ||
+        text.includes('остальн')
+      ) {
+        return 'Конкуренты';
+      }
       return 'Фото';
     }
 
@@ -2399,7 +2438,7 @@
     }
 
     function getPhotoSheetLinkBaseName(questionCode) {
-      const blockName = getPhotoBlockName(questionCode);
+      const blockName = getPhotoBlockName(questionCode, getQuestionByCode(questionCode));
       if (blockName === 'Xiaomi') return 'BZ Xiaomi';
       if (blockName === 'Конкуренты') return 'BZ Конкуренты';
       return 'Фото';
@@ -2599,10 +2638,17 @@
       const type = String(question.type || '').trim();
       if (type === 'photos') return 'photo';
       if (['text', 'long_text', 'number', 'url', 'reference_autocomplete', 'single_select', 'multi_select', 'photo'].includes(type)) {
+        if (isPhotoQuestion(question)) return 'photo';
         return type;
       }
-      if (question.code === 'photos_bz_other_vendors') return 'photo';
+      if (isPhotoQuestion(question)) return 'photo';
       return type;
+    }
+
+    function isPhotoQuestion(question) {
+      const code = String(question && question.code || '').toLowerCase();
+      const text = normalizeSearchText(question && question.text || '');
+      return code.startsWith('photos_bz_') || (text.includes('сделать фото') && text.includes('бз'));
     }
 
     function getQuestionByCode(code) {
@@ -2866,9 +2912,48 @@
             if (shouldHide) {
               clearFieldAnswer(field);
             }
-          });
+        });
         if (absent) clearOnBzDisplayForBrand(brand);
       });
+
+      applyStoreChannelVisibility();
+    }
+
+    function applyStoreChannelVisibility() {
+      document.querySelectorAll('.field.hidden-by-store').forEach((field) => {
+        field.classList.remove('hidden-by-store');
+      });
+
+      if (!isSelectedStoreTcr()) return;
+
+      document.querySelectorAll('.section[data-section-code="promoters"] .field').forEach(hideFieldByStoreRule);
+      document.querySelectorAll('.field').forEach((field) => {
+        const question = getQuestionByCode(field.dataset.code);
+        if (!question) return;
+
+        const section = getSectionByCode(question.sectionCode);
+        const productCategory = detectProductCategory(question.text || '');
+        const isTvQuestion = productCategory && productCategory.key === 'tv';
+        if (isTvQuestion && (isCapaSection(section) || isAverageSalesSection(section))) {
+          hideFieldByStoreRule(field);
+        }
+      });
+    }
+
+    function hideFieldByStoreRule(field) {
+      if (!field || field.classList.contains('auto-only')) return;
+      field.classList.add('hidden-by-store');
+      clearFieldAnswer(field);
+    }
+
+    function isSelectedStoreTcr() {
+      const store = state.referenceLabels.store_network_address || {};
+      const value = normalizeSearchText([store.storeChannel, store.channelType, store.channel].filter(Boolean).join(' '));
+      return value.split(' ').includes('tcr');
+    }
+
+    function isFieldHidden(field) {
+      return Boolean(field && (field.classList.contains('hidden-by-answer') || field.classList.contains('hidden-by-store')));
     }
 
     function isBrandDisplayField(field) {

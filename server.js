@@ -25,7 +25,7 @@ const googleOauthClientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET || '';
 const googleOauthRefreshToken = process.env.GOOGLE_OAUTH_REFRESH_TOKEN || '';
 const jsonLimitBytes = Number(process.env.JSON_LIMIT_BYTES || 200 * 1024 * 1024);
 const upstreamTimeoutMs = Number(process.env.UPSTREAM_TIMEOUT_MS || 120000);
-const serviceVersion = 'railway-survey-2026-07-06-rich-photo-links';
+const serviceVersion = 'railway-survey-2026-07-06-store-channel-rms';
 const cacheTtlMs = Number(process.env.API_CACHE_TTL_MS || 5 * 60 * 1000);
 const apiCache = new Map();
 let driveAccessToken = null;
@@ -36,7 +36,9 @@ const RESULT_BASE_HEADERS = [
   'Сотрудник',
   'Руководитель',
   'Магазин/ТТ',
+  'RMS Store Code',
   'Канал',
+  'Channel',
   'Адрес',
   'Статус',
 ];
@@ -45,6 +47,17 @@ const RESULT_SKIPPED_QUESTION_CODES = new Set([
   'employee_full_name',
   'manager_full_name',
   'store_network_address',
+]);
+
+const RESULT_SKIPPED_ANSWER_HEADERS = new Set([
+  'Сотрудник',
+  'Руководитель',
+  'Магазин',
+  'Магазин/ТТ',
+  'Канал',
+  'Channel',
+  'RMS Store Code',
+  'Адрес',
 ]);
 
 const GOOGLE_API_SCOPES = [
@@ -608,7 +621,9 @@ async function submitSurveyToSheets(payload) {
     'Сотрудник': meta.employee || '',
     'Руководитель': meta.manager || '',
     'Магазин/ТТ': meta.store || '',
+    'RMS Store Code': meta.rmsStoreCode || '',
     'Канал': meta.channel || '',
+    'Channel': meta.storeChannel || '',
     'Адрес': meta.address || '',
     'Дата отправки': now,
     'Статус': 'Отправлено',
@@ -618,6 +633,7 @@ async function submitSurveyToSheets(payload) {
     if (RESULT_SKIPPED_QUESTION_CODES.has(String(answer && answer.questionCode || ''))) continue;
     const header = getResultAnswerHeader(answer);
     if (!header) continue;
+    if (RESULT_SKIPPED_ANSWER_HEADERS.has(header)) continue;
     row[header] = getResultAnswerValue(answer);
   }
 
