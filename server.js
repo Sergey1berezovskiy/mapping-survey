@@ -25,7 +25,7 @@ const googleOauthClientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET || '';
 const googleOauthRefreshToken = process.env.GOOGLE_OAUTH_REFRESH_TOKEN || '';
 const jsonLimitBytes = Number(process.env.JSON_LIMIT_BYTES || 200 * 1024 * 1024);
 const upstreamTimeoutMs = Number(process.env.UPSTREAM_TIMEOUT_MS || 120000);
-const serviceVersion = 'railway-survey-2026-07-06-validation-header-fixes';
+const serviceVersion = 'railway-survey-2026-07-06-moscow-date-format';
 const cacheTtlMs = Number(process.env.API_CACHE_TTL_MS || 5 * 60 * 1000);
 const apiCache = new Map();
 let driveAccessToken = null;
@@ -611,7 +611,7 @@ async function handleSheetsDebug(res) {
 }
 
 async function submitSurveyToSheets(payload) {
-  const now = new Date().toISOString();
+  const now = formatMoscowDateTime();
   const surveyId = crypto.randomUUID();
   const meta = payload && payload.meta ? payload.meta : {};
   const answers = payload && Array.isArray(payload.answers) ? payload.answers : [];
@@ -640,6 +640,22 @@ async function submitSurveyToSheets(payload) {
   await appendResultRow(row);
 
   return { ok: true, surveyId, mode: 'sheets_api_single_sheet' };
+}
+
+function formatMoscowDateTime(date = new Date()) {
+  const moscowOffsetMs = 3 * 60 * 60 * 1000;
+  const moscowDate = new Date(date.getTime() + moscowOffsetMs);
+  const day = padDatePart(moscowDate.getUTCDate());
+  const month = padDatePart(moscowDate.getUTCMonth() + 1);
+  const year = moscowDate.getUTCFullYear();
+  const hours = padDatePart(moscowDate.getUTCHours());
+  const minutes = padDatePart(moscowDate.getUTCMinutes());
+  const seconds = padDatePart(moscowDate.getUTCSeconds());
+  return `${day}.${month}.${year} ${hours}:${minutes}:${seconds}`;
+}
+
+function padDatePart(value) {
+  return String(value).padStart(2, '0');
 }
 
 async function appendResultRow(row) {
