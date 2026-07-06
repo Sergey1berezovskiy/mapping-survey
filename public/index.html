@@ -511,6 +511,17 @@
       cursor: pointer;
     }
 
+    .file-remove-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px;
+    }
+
+    .file-remove-actions .file-remove-btn {
+      margin-top: 0;
+    }
+
     @keyframes uploadPulse {
       0%, 100% {
         box-shadow: 0 0 0 0 rgba(178, 31, 87, 0.16);
@@ -1090,14 +1101,18 @@
 
       document.querySelectorAll('.file-list').forEach((fileList) => {
         fileList.addEventListener('click', async (event) => {
-          const button = event.target.closest('[data-remove-files]');
+          const button = event.target.closest('[data-remove-files], [data-remove-all-files]');
           if (!button) return;
 
-          const code = button.dataset.removeFiles;
+          const removeAll = Boolean(button.dataset.removeAllFiles);
+          const code = button.dataset.removeFiles || button.dataset.removeAllFiles;
           const field = button.closest('.field');
-          const selectedIndexes = [...fileList.querySelectorAll('[data-remove-file-index]:checked')]
-            .map((input) => Number(input.dataset.removeFileIndex))
-            .filter(Number.isFinite);
+          const currentFilesCount = Array.isArray(state.answers[code]) ? state.answers[code].length : 0;
+          const selectedIndexes = removeAll
+            ? Array.from({ length: currentFilesCount }, (_, index) => index)
+            : [...fileList.querySelectorAll('[data-remove-file-index]:checked')]
+              .map((input) => Number(input.dataset.removeFileIndex))
+              .filter(Number.isFinite);
 
           if (!selectedIndexes.length) return;
 
@@ -1113,7 +1128,7 @@
               .map((fileId) => apiCall('deleteQuestionFile', { fileId })));
           } catch (error) {
             button.disabled = false;
-            button.textContent = 'Удалить выбранные';
+            button.textContent = removeAll ? 'Удалить все фото' : 'Удалить выбранные';
             renderFileStatus(
               fileList,
               `Не удалось удалить фото из Google Drive: ${error && error.message ? error.message : error}`,
@@ -1523,7 +1538,12 @@
               </li>
             `).join('')}
           </ul>
-          ${removable ? `<button class="file-remove-btn" type="button" data-remove-files="${escapeHtml(code)}">Удалить выбранные</button>` : ''}
+          ${removable ? `
+            <div class="file-remove-actions">
+              <button class="file-remove-btn" type="button" data-remove-files="${escapeHtml(code)}">Удалить выбранные</button>
+              <button class="file-remove-btn" type="button" data-remove-all-files="${escapeHtml(code)}">Удалить все фото</button>
+            </div>
+          ` : ''}
         ` : ''}
       `;
     }
@@ -1938,8 +1958,13 @@
     }
 
     function getEffectiveQuestionType(question) {
+      const type = String(question.type || '').trim();
+      if (type === 'photos') return 'photo';
+      if (['text', 'long_text', 'number', 'url', 'reference_autocomplete', 'single_select', 'multi_select', 'photo'].includes(type)) {
+        return type;
+      }
       if (question.code === 'photos_bz_other_vendors') return 'photo';
-      return question.type;
+      return type;
     }
 
     function enforceExclusiveBrandZoneAbsence(field, clickedChip) {
