@@ -220,7 +220,7 @@ async function getDriveAccessToken() {
   const header = base64UrlJson({ alg: 'RS256', typ: 'JWT' });
   const claim = base64UrlJson({
     iss: account.client_email,
-    scope: 'https://www.googleapis.com/auth/drive.file',
+    scope: 'https://www.googleapis.com/auth/drive',
     aud: 'https://oauth2.googleapis.com/token',
     exp: now + 3600,
     iat: now,
