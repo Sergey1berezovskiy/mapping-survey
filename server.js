@@ -25,7 +25,7 @@ const googleOauthClientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET || '';
 const googleOauthRefreshToken = process.env.GOOGLE_OAUTH_REFRESH_TOKEN || '';
 const jsonLimitBytes = Number(process.env.JSON_LIMIT_BYTES || 200 * 1024 * 1024);
 const upstreamTimeoutMs = Number(process.env.UPSTREAM_TIMEOUT_MS || 120000);
-const serviceVersion = 'railway-survey-2026-07-06-moscow-date-format';
+const serviceVersion = 'railway-survey-2026-07-06-browser-cache-stability';
 const cacheTtlMs = Number(process.env.API_CACHE_TTL_MS || 5 * 60 * 1000);
 const apiCache = new Map();
 let driveAccessToken = null;
@@ -1063,6 +1063,9 @@ async function callAppsScript(action, params) {
         throw new Error(
           'Apps Script не принял загрузку фото и вернул HTML вместо ответа. Фото будут загружаться по одному; если ошибка повторится, выберите меньше фото за раз.'
         );
+      }
+      if (looksLikeHtml) {
+        throw new Error('Apps Script вернул страницу Google вместо данных. Проверьте доступ веб-приложения и APPS_SCRIPT_URL.');
       }
       throw new Error(
         `Apps Script returned non-JSON response. Check deployment access and APPS_SCRIPT_URL. Response: ${sample}`

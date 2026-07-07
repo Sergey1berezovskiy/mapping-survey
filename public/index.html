@@ -884,6 +884,8 @@
       fileNames: {},
       fileSizes: {},
       references: {},
+      isSubmitted: false,
+      bootId: 0,
     };
 
     const IMAGE_MAX_SIDE = 1280;
@@ -897,10 +899,11 @@
       'https://unpkg.com/heic2any@0.0.4/dist/heic2any.min.js',
     ];
     const FORM_CONFIG_CACHE_KEY = 'mappingSurvey.formConfig.v1';
-    const REFERENCES_CACHE_KEY = 'mappingSurvey.references.v3';
+    const REFERENCES_CACHE_KEY = 'mappingSurvey.references.v4';
     const DRAFT_CACHE_KEY = 'mappingSurvey.draft.v1';
     let draftSaveTimer = null;
     let heicConverterPromise = null;
+    let referencesRefreshPromise = null;
 
     const els = {
       loading: document.querySelector('#loading'),
@@ -946,6 +949,9 @@
     }
 
     async function boot() {
+      const bootId = Date.now();
+      state.bootId = bootId;
+      state.isSubmitted = false;
       loadDraft();
       state.references = loadStoredReferences() || {};
 
@@ -958,10 +964,13 @@
         els.status.textContent = 'Кэш';
         showSection(state.sectionIndex || 0, false);
         refreshReferences();
+        refreshConfig(bootId);
+        return;
       }
 
       try {
         const config = await apiCall('getFormConfig');
+        if (state.bootId !== bootId || state.isSubmitted) return;
         saveStoredConfig(config);
         state.config = config;
         renderForm();
@@ -977,6 +986,15 @@
         }
         showError(error);
       }
+    }
+
+    async function refreshConfig(bootId) {
+      try {
+        const config = await apiCall('getFormConfig');
+        if (state.bootId !== bootId || state.isSubmitted || !config) return;
+        saveStoredConfig(config);
+        state.config = config;
+      } catch (error) {}
     }
 
     function renderForm() {
@@ -1482,11 +1500,11 @@
           return;
         }
 
-        try {
-          const items = await apiCall('searchReference', { type, query });
-          renderSuggestions(field, items);
-        } catch (error) {
-          showError(error);
+        const freshItems = await refreshReferences().then(() => searchLocalReferences(type, query)).catch(() => null);
+        if (freshItems) {
+          renderSuggestions(field, freshItems);
+        } else {
+          renderReferenceUnavailable(field);
         }
       }, 120);
     }
@@ -1592,6 +1610,13 @@
           saveDraftSoon();
         });
       });
+    }
+
+    function renderReferenceUnavailable(field) {
+      const box = field.querySelector('.suggestions');
+      if (!box) return;
+      box.innerHTML = '<button type="button" disabled>Справочник временно недоступен</button>';
+      box.classList.add('open');
     }
 
     function getSuggestionExtra(type, item) {
@@ -2128,6 +2153,9 @@
 
       try {
         await apiCall('submitSurvey', { payload: { meta, answers } });
+        state.isSubmitted = true;
+        els.loading.style.display = 'none';
+        els.loading.textContent = '';
         els.app.style.display = 'none';
         els.done.innerHTML = `
           <div>Ваш ответ отправлен</div>
@@ -2483,6 +2511,7 @@
     }
 
     function showError(error) {
+      if (state.isSubmitted || els.done.style.display === 'block') return;
       els.loading.style.display = 'block';
       els.loading.textContent = `Ошибка: ${error && error.message ? error.message : error}`;
       els.status.textContent = 'Ошибка';
@@ -2507,11 +2536,20 @@
     }
 
     async function refreshReferences() {
-      try {
-        const references = await apiCall('getReferences');
-        state.references = references || {};
-        saveStoredReferences(state.references);
-      } catch (error) {}
+      if (referencesRefreshPromise) return referencesRefreshPromise;
+      referencesRefreshPromise = (async () => {
+        try {
+          const references = await apiCall('getReferences');
+          state.references = references || {};
+          saveStoredReferences(state.references);
+          return state.references;
+        } catch (error) {
+          return state.references || {};
+        } finally {
+          referencesRefreshPromise = null;
+        }
+      })();
+      return referencesRefreshPromise;
     }
 
     function loadStoredReferences() {
@@ -2552,6 +2590,7 @@
     }
 
     function saveDraft() {
+      if (state.isSubmitted) return;
       try {
         localStorage.setItem(DRAFT_CACHE_KEY, JSON.stringify({
           savedAt: Date.now(),
@@ -2585,6 +2624,7 @@
 
     function startNewSurvey() {
       resetDraftState();
+      state.isSubmitted = false;
       els.done.style.display = 'none';
       els.done.innerHTML = '';
       if (state.config) {
