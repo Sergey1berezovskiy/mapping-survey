@@ -1217,7 +1217,7 @@
 
     function getBzPhotoExampleLinks(question) {
       const examples = state.config && state.config.bzExamples ? state.config.bzExamples : {};
-      const block = getPhotoBlockName(question);
+      const block = getPhotoBlockName(question && question.code, question);
       const key = block === 'Xiaomi' ? 'xiaomi' : block === 'Конкуренты' ? 'competitors' : '';
       const links = key && Array.isArray(examples[key]) ? examples[key] : [];
       return links.map((link) => String(link || '').trim()).filter(Boolean);
