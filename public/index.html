@@ -1398,7 +1398,7 @@
                   start,
                   'uploading'
                 );
-                const batchFiles = await apiCall('uploadQuestionFiles', { questionCode: code, files: batch });
+                const batchFiles = await apiCall('uploadQuestionFiles', { questionCode: code, files: batch, store: getSelectedStoreDetails() });
                 urls.push(...batchFiles.map((file) => file.url));
                 uploadedIds.push(...batchFiles.map((file) => file.id));
                 uploadedNames.push(...batchFiles.map((file) => file.name));
@@ -2201,7 +2201,7 @@
       els.status.textContent = 'Отправка';
 
       const questionsByCode = Object.fromEntries(state.config.questions.map((question) => [question.code, question]));
-      const selectedStore = state.referenceLabels.store_network_address || {};
+      const selectedStore = getSelectedStoreDetails();
       const meta = {
         surveyId: state.surveyId,
         employee: state.answers.employee_full_name || '',
@@ -2578,10 +2578,34 @@
     }
 
     function getSelectedStoreFilePrefix() {
-      const store = state.referenceLabels.store_network_address || {};
+      const store = getSelectedStoreDetails();
       const rmsStoreCode = String(store.rmsStoreCode || '').trim();
       const storeName = store.address || store.extra || store.label || state.answers.store_network_address || 'Mapping';
       return [rmsStoreCode, storeName].filter(Boolean).join('_');
+    }
+
+    function getSelectedStoreDetails() {
+      const selected = state.referenceLabels.store_network_address || {};
+      const answer = String(state.answers.store_network_address || selected.label || '').trim();
+      const stores = state.references && Array.isArray(state.references.stores) ? state.references.stores : [];
+      const matched = stores.find((store) => {
+        if (!store) return false;
+        return (
+          (selected.id && String(store.id || '') === String(selected.id)) ||
+          (answer && String(store.label || '').trim() === answer)
+        );
+      }) || {};
+
+      return {
+        ...matched,
+        ...selected,
+        rmsStoreCode: selected.rmsStoreCode || selected.rms || selected['RMS Store Code'] || matched.rmsStoreCode || matched.rms || matched['RMS Store Code'] || '',
+        channel: selected.channel || matched.channel || '',
+        storeChannel: selected.storeChannel || selected.channelType || matched.storeChannel || matched.channelType || '',
+        address: selected.address || matched.address || selected.extra || matched.extra || '',
+        label: selected.label || matched.label || answer,
+        extra: selected.extra || matched.extra || '',
+      };
     }
 
     function sanitizeClientFileName(value) {

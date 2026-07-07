@@ -190,6 +190,8 @@ async function uploadQuestionFilesToDrive(params) {
 
   const files = Array.isArray(params && params.files) ? params.files : [];
   if (!files.length) return [];
+  const store = params && params.store ? params.store : {};
+  const rmsStoreCode = String(store.rmsStoreCode || store.rms || store['RMS Store Code'] || '').trim();
 
   const uploaded = [];
 
@@ -200,7 +202,11 @@ async function uploadQuestionFilesToDrive(params) {
     }
 
     const buffer = dataUrlToBuffer(file.data);
-    const safeName = sanitizeFileName(file.driveName || file.name || `photo_${index + 1}.jpg`);
+    let requestedName = file.driveName || file.name || `photo_${index + 1}.jpg`;
+    if (rmsStoreCode && !String(requestedName).startsWith(`${rmsStoreCode}_`)) {
+      requestedName = `${rmsStoreCode}_${requestedName}`;
+    }
+    const safeName = sanitizeFileName(requestedName);
 
     const driveFile = await createDriveFile({
       name: safeName,
