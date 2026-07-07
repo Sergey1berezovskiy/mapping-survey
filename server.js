@@ -25,7 +25,7 @@ const googleOauthClientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET || '';
 const googleOauthRefreshToken = process.env.GOOGLE_OAUTH_REFRESH_TOKEN || '';
 const jsonLimitBytes = Number(process.env.JSON_LIMIT_BYTES || 200 * 1024 * 1024);
 const upstreamTimeoutMs = Number(process.env.UPSTREAM_TIMEOUT_MS || 120000);
-const serviceVersion = 'railway-survey-2026-07-06-browser-cache-stability';
+const serviceVersion = 'railway-survey-2026-07-07-submit-stability-bz-examples';
 const cacheTtlMs = Number(process.env.API_CACHE_TTL_MS || 5 * 60 * 1000);
 const apiCache = new Map();
 let driveAccessToken = null;
@@ -612,8 +612,8 @@ async function handleSheetsDebug(res) {
 
 async function submitSurveyToSheets(payload) {
   const now = formatMoscowDateTime();
-  const surveyId = crypto.randomUUID();
   const meta = payload && payload.meta ? payload.meta : {};
+  const surveyId = String((payload && payload.surveyId) || meta.surveyId || crypto.randomUUID()).trim();
   const answers = payload && Array.isArray(payload.answers) ? payload.answers : [];
 
   const row = {
@@ -637,9 +637,14 @@ async function submitSurveyToSheets(payload) {
     row[header] = getResultAnswerValue(answer);
   }
 
-  await appendResultRow(row);
+  const appendResult = await appendResultRow(row);
 
-  return { ok: true, surveyId, mode: 'sheets_api_single_sheet' };
+  return {
+    ok: true,
+    surveyId,
+    duplicate: Boolean(appendResult && appendResult.duplicate),
+    mode: 'sheets_api_single_sheet',
+  };
 }
 
 function formatMoscowDateTime(date = new Date()) {
@@ -662,6 +667,11 @@ async function appendResultRow(row) {
   await ensureResultsSheet();
 
   const existingHeaders = await getSheetHeaders(resultsSheetName, true);
+  const existingRowNumber = await findExistingResultRowById(row[RESULT_BASE_HEADERS[0]], existingHeaders);
+  if (existingRowNumber) {
+    return { rowNumber: existingRowNumber, duplicate: true };
+  }
+
   const desiredHeaders = mergeHeaders([], Object.keys(row));
   const hasDataRows = await hasResultDataRows(resultsSheetName);
   const nextHeaders = await ensureHeadersInDesiredOrder(resultsSheetName, hasDataRows ? existingHeaders : [], desiredHeaders);
@@ -669,8 +679,51 @@ async function appendResultRow(row) {
   const appendPayload = await appendSheetValues(resultsSheetName, [nextHeaders.map((header) => getCellTextValue(row[header]))]);
   const rowNumber = getAppendedRowNumber(appendPayload);
   if (rowNumber) {
-    await applyRichLinksToResultRow(resultsSheetName, rowNumber, nextHeaders, row);
+    try {
+      await applyRichLinksToResultRow(resultsSheetName, rowNumber, nextHeaders, row);
+    } catch (error) {
+      console.error('[submitSurvey] Rich link formatting failed after row append:', error && error.message ? error.message : error);
+    }
   }
+
+  return { rowNumber, duplicate: false };
+}
+
+async function findExistingResultRowById(surveyId, headers) {
+  const id = String(surveyId || '').trim();
+  if (!id || !Array.isArray(headers) || !headers.length) return null;
+
+  const idHeaderIndex = headers.findIndex((header) => String(header || '').trim() === RESULT_BASE_HEADERS[0]);
+  if (idHeaderIndex < 0) return null;
+
+  const column = columnIndexToLetter(idHeaderIndex);
+  const token = await getDriveAccessToken();
+  const range = `${quoteSheetName(resultsSheetName)}!${column}:${column}`;
+  const response = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(range)}?majorDimension=COLUMNS`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw new Error(payload && payload.error && payload.error.message ? payload.error.message : `Google Sheets id lookup failed: ${response.status}`);
+  }
+
+  const values = payload && Array.isArray(payload.values) && Array.isArray(payload.values[0]) ? payload.values[0] : [];
+  const foundIndex = values.findIndex((value, index) => index > 0 && String(value || '').trim() === id);
+  return foundIndex >= 0 ? foundIndex + 1 : null;
+}
+
+function columnIndexToLetter(index) {
+  let value = Number(index) + 1;
+  let result = '';
+  while (value > 0) {
+    const remainder = (value - 1) % 26;
+    result = String.fromCharCode(65 + remainder) + result;
+    value = Math.floor((value - 1) / 26);
+  }
+  return result;
 }
 
 async function getSheetHeaders(sheetName, force = false) {
@@ -681,7 +734,7 @@ async function getSheetHeaders(sheetName, force = false) {
   }
 
   const token = await getDriveAccessToken();
-  const response = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(quoteSheetName(sheetName) + '!A1:ZZ1')}?majorDimension=ROWS`, {
+  const response = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(quoteSheetName(sheetName) + '!A1:ZZZ1')}?majorDimension=ROWS`, {
     headers: {
       Authorization: `Bearer ${token}`,
     },
@@ -997,7 +1050,7 @@ function buildTextFormatRuns(text, links) {
 
 async function appendSheetValues(sheetName, values) {
   const token = await getDriveAccessToken();
-  const range = `${quoteSheetName(sheetName)}!A:ZZ`;
+  const range = `${quoteSheetName(sheetName)}!A:ZZZ`;
   const response = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values/${encodeURIComponent(range)}:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`, {
     method: 'POST',
     headers: {

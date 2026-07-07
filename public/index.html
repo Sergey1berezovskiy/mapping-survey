@@ -612,6 +612,40 @@
       gap: 8px;
     }
 
+    .photo-examples {
+      display: grid;
+      gap: 8px;
+      margin: -2px 0 10px;
+    }
+
+    .photo-examples-title {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .photo-examples-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+      gap: 8px;
+    }
+
+    .photo-example {
+      display: block;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fffaf6;
+      aspect-ratio: 4 / 3;
+    }
+
+    .photo-example img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
     .file-action {
       display: flex;
       align-items: center;
@@ -886,6 +920,7 @@
       references: {},
       isSubmitted: false,
       bootId: 0,
+      surveyId: createSurveyId(),
     };
 
     const IMAGE_MAX_SIDE = 1280;
@@ -898,7 +933,7 @@
       'https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js',
       'https://unpkg.com/heic2any@0.0.4/dist/heic2any.min.js',
     ];
-    const FORM_CONFIG_CACHE_KEY = 'mappingSurvey.formConfig.v1';
+    const FORM_CONFIG_CACHE_KEY = 'mappingSurvey.formConfig.v2';
     const REFERENCES_CACHE_KEY = 'mappingSurvey.references.v4';
     const DRAFT_CACHE_KEY = 'mappingSurvey.draft.v1';
     let draftSaveTimer = null;
@@ -1126,9 +1161,11 @@
       }
 
       if (effectiveType === 'photo') {
+        const examples = renderBzPhotoExamples(question);
         return `
           <div class="field" data-code="${escapeHtml(question.code)}" data-type="${escapeHtml(effectiveType)}" data-original-type="${escapeHtml(question.type)}" data-group="${groupAttr}" data-required="${question.required}">
             <label>${escapeHtml(question.text)}${requiredMark}</label>
+            ${examples}
             <div class="file-control">
               <div class="file-actions">
                 <label class="file-action primary-file">
@@ -1155,6 +1192,48 @@
           ${error}
         </div>
       `;
+    }
+
+    function renderBzPhotoExamples(question) {
+      const links = getBzPhotoExampleLinks(question);
+      if (!links.length) return '';
+
+      return `
+        <div class="photo-examples">
+          <div class="photo-examples-title">Примеры фото</div>
+          <div class="photo-examples-grid">
+            ${links.map((link, index) => {
+              const previewUrl = getImagePreviewUrl(link);
+              return `
+                <a class="photo-example" href="${escapeHtml(link)}" target="_blank" rel="noopener" aria-label="Открыть пример фото ${index + 1}">
+                  <img src="${escapeHtml(previewUrl)}" alt="Пример фото ${index + 1}" loading="lazy">
+                </a>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    function getBzPhotoExampleLinks(question) {
+      const examples = state.config && state.config.bzExamples ? state.config.bzExamples : {};
+      const block = getPhotoBlockName(question);
+      const key = block === 'Xiaomi' ? 'xiaomi' : block === 'Конкуренты' ? 'competitors' : '';
+      const links = key && Array.isArray(examples[key]) ? examples[key] : [];
+      return links.map((link) => String(link || '').trim()).filter(Boolean);
+    }
+
+    function getImagePreviewUrl(url) {
+      const fileId = extractDriveFileId(url);
+      return fileId ? `https://drive.google.com/thumbnail?id=${encodeURIComponent(fileId)}&sz=w320` : url;
+    }
+
+    function extractDriveFileId(url) {
+      const text = String(url || '');
+      const fileMatch = text.match(/\/file\/d\/([^/]+)/);
+      if (fileMatch) return fileMatch[1];
+      const idMatch = text.match(/[?&]id=([^&]+)/);
+      return idMatch ? idMatch[1] : '';
     }
 
     function attachHandlers() {
@@ -2124,6 +2203,7 @@
       const questionsByCode = Object.fromEntries(state.config.questions.map((question) => [question.code, question]));
       const selectedStore = state.referenceLabels.store_network_address || {};
       const meta = {
+        surveyId: state.surveyId,
         employee: state.answers.employee_full_name || '',
         manager: state.answers.manager_full_name || '',
         store: state.answers.store_network_address || '',
@@ -2152,7 +2232,7 @@
         });
 
       try {
-        await apiCall('submitSurvey', { payload: { meta, answers } });
+        await apiCall('submitSurvey', { payload: { surveyId: state.surveyId, meta, answers } });
         state.isSubmitted = true;
         els.loading.style.display = 'none';
         els.loading.textContent = '';
@@ -2580,6 +2660,7 @@
         state.fileIds = draft.fileIds || {};
         state.fileNames = draft.fileNames || {};
         state.fileSizes = draft.fileSizes || {};
+        state.surveyId = draft.surveyId || createSurveyId();
         state.sectionIndex = Number.isFinite(Number(draft.sectionIndex)) ? Number(draft.sectionIndex) : 0;
       } catch (error) {}
     }
@@ -2594,6 +2675,7 @@
       try {
         localStorage.setItem(DRAFT_CACHE_KEY, JSON.stringify({
           savedAt: Date.now(),
+          surveyId: state.surveyId,
           sectionIndex: state.sectionIndex,
           answers: state.answers,
           referenceLabels: state.referenceLabels,
@@ -2620,6 +2702,14 @@
       state.fileNames = {};
       state.fileSizes = {};
       state.sectionIndex = 0;
+      state.surveyId = createSurveyId();
+    }
+
+    function createSurveyId() {
+      if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+        return window.crypto.randomUUID();
+      }
+      return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
     }
 
     function startNewSurvey() {
