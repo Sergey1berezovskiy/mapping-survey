@@ -2579,7 +2579,9 @@
 
     function getSelectedStoreFilePrefix() {
       const store = state.referenceLabels.store_network_address || {};
-      return store.address || store.extra || store.label || state.answers.store_network_address || 'Mapping';
+      const rmsStoreCode = String(store.rmsStoreCode || '').trim();
+      const storeName = store.address || store.extra || store.label || state.answers.store_network_address || 'Mapping';
+      return [rmsStoreCode, storeName].filter(Boolean).join('_');
     }
 
     function sanitizeClientFileName(value) {
