@@ -25,7 +25,7 @@ const googleOauthClientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET || '';
 const googleOauthRefreshToken = process.env.GOOGLE_OAUTH_REFRESH_TOKEN || '';
 const jsonLimitBytes = Number(process.env.JSON_LIMIT_BYTES || 200 * 1024 * 1024);
 const upstreamTimeoutMs = Number(process.env.UPSTREAM_TIMEOUT_MS || 120000);
-const serviceVersion = 'railway-survey-2026-07-07-submit-stability-bz-examples';
+const serviceVersion = 'railway-survey-2026-07-08-fast-references';
 const cacheTtlMs = Number(process.env.API_CACHE_TTL_MS || 5 * 60 * 1000);
 const apiCache = new Map();
 const apiCacheInflight = new Map();
@@ -1107,6 +1107,7 @@ async function callAppsScriptCached(action, params) {
   }
 
   const promise = callAppsScript(action, params)
+    .then((payload) => prepareAppsScriptPayload(action, payload))
     .then((payload) => {
       apiCache.set(key, { savedAt: Date.now(), payload });
       return payload;
@@ -1123,6 +1124,7 @@ function refreshAppsScriptCacheInBackground(action, params, key) {
   if (apiCacheInflight.has(key)) return;
 
   const promise = callAppsScript(action, params)
+    .then((payload) => prepareAppsScriptPayload(action, payload))
     .then((payload) => {
       apiCache.set(key, { savedAt: Date.now(), payload });
       return payload;
@@ -1160,6 +1162,64 @@ function warmAppsScriptCache() {
   if (!scriptUrl) return;
   refreshAppsScriptCacheInBackground('getFormConfig', {}, 'getFormConfig:{}');
   refreshAppsScriptCacheInBackground('getReferences', {}, 'getReferences:{}');
+}
+
+function prepareAppsScriptPayload(action, payload) {
+  if (action !== 'getReferences' || !payload || !payload.result) {
+    return payload;
+  }
+
+  return {
+    ...payload,
+    result: compactReferences(payload.result),
+  };
+}
+
+function compactReferences(references) {
+  if (!references || typeof references !== 'object') return references;
+
+  const compacted = {};
+  for (const [key, value] of Object.entries(references)) {
+    compacted[key] = Array.isArray(value)
+      ? value.map((item) => compactReferenceItem(key, item))
+      : value;
+  }
+
+  return compacted;
+}
+
+function compactReferenceItem(type, item) {
+  if (!item || typeof item !== 'object') return item;
+
+  const result = pickDefined(item, [
+    'id',
+    'label',
+    'manager',
+    'extra',
+    'channel',
+    'storeChannel',
+    'channelType',
+    'rmsStoreCode',
+    'rms',
+    'address',
+  ]);
+
+  if (!result.label && item.search) result.label = item.search;
+  if (type === 'stores' && !result.extra && (item.channel || item.address)) {
+    result.extra = [item.channel, item.address].filter(Boolean).join(' - ');
+  }
+
+  return result;
+}
+
+function pickDefined(source, keys) {
+  const result = {};
+  for (const key of keys) {
+    if (source[key] !== undefined && source[key] !== null && source[key] !== '') {
+      result[key] = source[key];
+    }
+  }
+  return result;
 }
 
 async function callAppsScript(action, params) {
