@@ -28,6 +28,7 @@ const upstreamTimeoutMs = Number(process.env.UPSTREAM_TIMEOUT_MS || 120000);
 const serviceVersion = 'railway-survey-2026-07-07-submit-stability-bz-examples';
 const cacheTtlMs = Number(process.env.API_CACHE_TTL_MS || 5 * 60 * 1000);
 const apiCache = new Map();
+const apiCacheInflight = new Map();
 let driveAccessToken = null;
 
 const RESULT_BASE_HEADERS = [
@@ -1091,21 +1092,59 @@ async function callAppsScriptCached(action, params) {
 
   const key = `${action}:${JSON.stringify(params || {})}`;
   const cached = apiCache.get(key);
-  if (cached && Date.now() - cached.savedAt < cacheTtlMs) {
+  const cacheAgeMs = cached ? Date.now() - cached.savedAt : Infinity;
+  if (cached && cacheAgeMs < cacheTtlMs) {
     return cached.payload;
   }
 
-  const payload = await callAppsScript(action, params);
-  apiCache.set(key, { savedAt: Date.now(), payload });
-  return payload;
+  if (cached) {
+    refreshAppsScriptCacheInBackground(action, params, key);
+    return cached.payload;
+  }
+
+  if (apiCacheInflight.has(key)) {
+    return apiCacheInflight.get(key);
+  }
+
+  const promise = callAppsScript(action, params)
+    .then((payload) => {
+      apiCache.set(key, { savedAt: Date.now(), payload });
+      return payload;
+    })
+    .finally(() => {
+      apiCacheInflight.delete(key);
+    });
+
+  apiCacheInflight.set(key, promise);
+  return promise;
+}
+
+function refreshAppsScriptCacheInBackground(action, params, key) {
+  if (apiCacheInflight.has(key)) return;
+
+  const promise = callAppsScript(action, params)
+    .then((payload) => {
+      apiCache.set(key, { savedAt: Date.now(), payload });
+      return payload;
+    })
+    .catch((error) => {
+      console.warn(`Background cache refresh failed for ${action}:`, error && error.message ? error.message : error);
+      return null;
+    })
+    .finally(() => {
+      apiCacheInflight.delete(key);
+    });
+
+  apiCacheInflight.set(key, promise);
 }
 
 function getApiCacheDebug(action, params = {}) {
   const key = `${action}:${JSON.stringify(params || {})}`;
   const cached = apiCache.get(key);
+  const inFlight = apiCacheInflight.has(key);
   const ttlSec = Math.round(cacheTtlMs / 1000);
   if (!cached) {
-    return { cached: false, ageSec: null, ttlSec };
+    return { cached: false, ageSec: null, ttlSec, inFlight };
   }
 
   const ageSec = Math.max(0, Math.round((Date.now() - cached.savedAt) / 1000));
@@ -1113,7 +1152,14 @@ function getApiCacheDebug(action, params = {}) {
     cached: ageSec < ttlSec,
     ageSec,
     ttlSec,
+    inFlight,
   };
+}
+
+function warmAppsScriptCache() {
+  if (!scriptUrl) return;
+  refreshAppsScriptCacheInBackground('getFormConfig', {}, 'getFormConfig:{}');
+  refreshAppsScriptCacheInBackground('getReferences', {}, 'getReferences:{}');
 }
 
 async function callAppsScript(action, params) {
@@ -1243,4 +1289,5 @@ function sendHtml(res, status, html) {
 
 server.listen(port, () => {
   console.log(`Mapping Survey ${serviceVersion} is running on port ${port}`);
+  warmAppsScriptCache();
 });
