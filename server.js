@@ -98,6 +98,8 @@ const server = http.createServer(async (req, res) => {
         googleOauthClientConfigured: Boolean(googleOauthClientId && googleOauthClientSecret),
         googleOauthRefreshTokenConfigured: Boolean(googleOauthRefreshToken),
         driveAuthMode: getDriveAuthMode(),
+        formConfigCache: getApiCacheDebug('getFormConfig'),
+        referencesCache: getApiCacheDebug('getReferences'),
       });
       return;
     }
@@ -1096,6 +1098,22 @@ async function callAppsScriptCached(action, params) {
   const payload = await callAppsScript(action, params);
   apiCache.set(key, { savedAt: Date.now(), payload });
   return payload;
+}
+
+function getApiCacheDebug(action, params = {}) {
+  const key = `${action}:${JSON.stringify(params || {})}`;
+  const cached = apiCache.get(key);
+  const ttlSec = Math.round(cacheTtlMs / 1000);
+  if (!cached) {
+    return { cached: false, ageSec: null, ttlSec };
+  }
+
+  const ageSec = Math.max(0, Math.round((Date.now() - cached.savedAt) / 1000));
+  return {
+    cached: ageSec < ttlSec,
+    ageSec,
+    ttlSec,
+  };
 }
 
 async function callAppsScript(action, params) {

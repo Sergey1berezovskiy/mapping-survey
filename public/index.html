@@ -918,6 +918,9 @@
       fileNames: {},
       fileSizes: {},
       references: {},
+      referencesLoaded: false,
+      referencesLoading: false,
+      referencesError: '',
       isSubmitted: false,
       bootId: 0,
       surveyId: createSurveyId(),
@@ -983,12 +986,33 @@
       return payload.result;
     }
 
+    function sleep(ms) {
+      return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
+    async function apiCallWithRetry(action, params = {}, attempts = 3) {
+      let lastError;
+
+      for (let attempt = 1; attempt <= attempts; attempt++) {
+        try {
+          return await apiCall(action, params);
+        } catch (error) {
+          lastError = error;
+          if (attempt === attempts) break;
+          await sleep(700 * attempt);
+        }
+      }
+
+      throw lastError;
+    }
+
     async function boot() {
       const bootId = Date.now();
       state.bootId = bootId;
       state.isSubmitted = false;
       loadDraft();
       state.references = loadStoredReferences() || {};
+      state.referencesLoaded = hasAnyReferences(state.references);
 
       const cachedConfig = loadStoredConfig();
       if (cachedConfig) {
@@ -998,7 +1022,7 @@
         els.app.style.display = 'grid';
         els.status.textContent = 'Кэш';
         showSection(state.sectionIndex || 0, false);
-        refreshReferences();
+        refreshReferences().catch(() => {});
         refreshConfig(bootId);
         return;
       }
@@ -1013,7 +1037,7 @@
         els.app.style.display = 'grid';
         els.status.textContent = 'Черновик';
         showSection(state.sectionIndex || 0, false);
-        refreshReferences();
+        refreshReferences().catch(() => {});
       } catch (error) {
         if (cachedConfig) {
           els.status.textContent = 'Офлайн';
@@ -1579,9 +1603,15 @@
           return;
         }
 
-        const freshItems = await refreshReferences().then(() => searchLocalReferences(type, query)).catch(() => null);
+        renderReferenceLoading(field);
+
+        const freshItems = await refreshReferences()
+          .then(() => searchLocalReferences(type, query))
+          .catch(() => null);
         if (freshItems) {
           renderSuggestions(field, freshItems);
+        } else if (state.referencesLoading) {
+          renderReferenceLoading(field);
         } else {
           renderReferenceUnavailable(field);
         }
@@ -1695,6 +1725,13 @@
       const box = field.querySelector('.suggestions');
       if (!box) return;
       box.innerHTML = '<button type="button" disabled>Справочник временно недоступен</button>';
+      box.classList.add('open');
+    }
+
+    function renderReferenceLoading(field) {
+      const box = field.querySelector('.suggestions');
+      if (!box) return;
+      box.innerHTML = '<button type="button" disabled>Справочник загружается...</button>';
       box.classList.add('open');
     }
 
@@ -2644,14 +2681,24 @@
     async function refreshReferences() {
       if (referencesRefreshPromise) return referencesRefreshPromise;
       referencesRefreshPromise = (async () => {
+        state.referencesLoading = true;
+        state.referencesError = '';
         try {
-          const references = await apiCall('getReferences');
+          const references = await apiCallWithRetry('getReferences', {}, 3);
+          if (!hasAnyReferences(references)) {
+            throw new Error('Сервер вернул пустой справочник');
+          }
           state.references = references || {};
+          state.referencesLoaded = true;
           saveStoredReferences(state.references);
           return state.references;
         } catch (error) {
-          return state.references || {};
+          state.referencesError = error && error.message ? error.message : String(error || '');
+          if (hasAnyReferences(state.references)) return state.references;
+          state.referencesLoaded = false;
+          throw error;
         } finally {
+          state.referencesLoading = false;
           referencesRefreshPromise = null;
         }
       })();
@@ -2661,19 +2708,27 @@
     function loadStoredReferences() {
       try {
         const raw = localStorage.getItem(REFERENCES_CACHE_KEY);
-        return raw ? JSON.parse(raw).references : null;
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        return hasAnyReferences(parsed.references) ? parsed.references : null;
       } catch (error) {
         return null;
       }
     }
 
     function saveStoredReferences(references) {
+      if (!hasAnyReferences(references)) return;
       try {
         localStorage.setItem(REFERENCES_CACHE_KEY, JSON.stringify({
           savedAt: Date.now(),
           references,
         }));
       } catch (error) {}
+    }
+
+    function hasAnyReferences(references) {
+      if (!references || typeof references !== 'object') return false;
+      return Object.keys(references).some((key) => Array.isArray(references[key]) && references[key].length);
     }
 
     function loadDraft() {
