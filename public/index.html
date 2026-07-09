@@ -2014,7 +2014,7 @@
         if (brandZoneAbsent && displayQuestion && selectedAnswerList(displayQuestion.code).some(isOnBzDisplayOption)) {
           ok = false;
           if (mark && displayField) {
-            setBusinessFieldError(displayField, 'Если БЗ отсутствует, выкладка не может быть на BZ.');
+            setBusinessFieldError(displayField, 'Если брендинг отсутствует, выкладка не может быть на BZ.');
           }
         }
 
@@ -2064,7 +2064,9 @@
 
     function isBrandZoneAbsentOption(option) {
       const text = normalizeSearchText(option);
-      return text.includes('бз') && text.includes('отсутств');
+      const hasAbsentWord = text.includes('отсутств');
+      const hasBrandingMarker = text.includes('бз') || text.includes('брендинг');
+      return hasAbsentWord && hasBrandingMarker;
     }
 
     function isOnBzDisplayOption(option) {
