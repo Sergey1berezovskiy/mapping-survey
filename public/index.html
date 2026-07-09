@@ -618,6 +618,23 @@
       margin: -2px 0 10px;
     }
 
+    .section-examples {
+      padding: 12px;
+      margin: 10px 0 14px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fffaf6;
+    }
+
+    .section-examples-groups {
+      display: grid;
+      gap: 12px;
+    }
+
+    .section-examples .photo-examples {
+      margin: 0;
+    }
+
     .photo-examples-title {
       color: var(--muted);
       font-size: 12px;
@@ -1067,11 +1084,13 @@
         const capaSummary = isAverageSalesSection(section)
           ? '<div class="capa-summary-anchor" data-capa-anchor><div class="capa-summary" data-capa-summary></div></div>'
           : '';
+        const sectionExamples = section.code === 'brand_zones' ? renderBzBrandingExamples() : '';
         return `
           <section class="${sectionClass}" data-section-index="${index}" data-section-code="${escapeHtml(section.code)}">
             ${capaSummary}
             <h2>${escapeHtml(title)}</h2>
             ${description ? `<p class="description">${escapeHtml(description)}</p>` : ''}
+            ${sectionExamples}
             ${questions.map(renderQuestion).join('')}
           </section>
         `;
@@ -1218,13 +1237,33 @@
       `;
     }
 
+    function renderBzBrandingExamples() {
+      const xiaomi = getBzExampleLinksByKey('xiaomi');
+      const competitors = getBzExampleLinksByKey('competitors');
+      if (!xiaomi.length && !competitors.length) return '';
+
+      return `
+        <div class="section-examples">
+          <div class="section-examples-groups">
+            ${renderPhotoExamplesGroup('Примеры брендинга Xiaomi', xiaomi)}
+            ${renderPhotoExamplesGroup('Примеры брендинга конкурентов', competitors)}
+          </div>
+        </div>
+      `;
+    }
+
     function renderBzPhotoExamples(question) {
       const links = getBzPhotoExampleLinks(question);
       if (!links.length) return '';
 
+      return renderPhotoExamplesGroup('Примеры фото', links);
+    }
+
+    function renderPhotoExamplesGroup(title, links) {
+      if (!links.length) return '';
       return `
         <div class="photo-examples">
-          <div class="photo-examples-title">Примеры фото</div>
+          <div class="photo-examples-title">${escapeHtml(title)}</div>
           <div class="photo-examples-grid">
             ${links.map((link, index) => {
               const previewUrl = getImagePreviewUrl(link);
@@ -1239,12 +1278,16 @@
       `;
     }
 
-    function getBzPhotoExampleLinks(question) {
+    function getBzExampleLinksByKey(key) {
       const examples = state.config && state.config.bzExamples ? state.config.bzExamples : {};
-      const block = getPhotoBlockName(question && question.code, question);
-      const key = block === 'Xiaomi' ? 'xiaomi' : block === 'Конкуренты' ? 'competitors' : '';
       const links = key && Array.isArray(examples[key]) ? examples[key] : [];
       return links.map((link) => String(link || '').trim()).filter(Boolean);
+    }
+
+    function getBzPhotoExampleLinks(question) {
+      const block = getPhotoBlockName(question && question.code, question);
+      const key = block === 'Xiaomi' ? 'xiaomi' : block === 'Конкуренты' ? 'competitors' : '';
+      return getBzExampleLinksByKey(key);
     }
 
     function getImagePreviewUrl(url) {
